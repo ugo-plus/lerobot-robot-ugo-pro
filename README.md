@@ -47,4 +47,13 @@ pip install -e .
 pytest
 ```
 
-Design notes, telemetry/command specs, and task planning live under `docs/`.
+Optionally enable the pre-commit hooks (ruff + mypy) so local checks match CI:
+
+```bash
+pre-commit install
+pre-commit run --all-files
+```
+
+The GitHub Actions workflow in `.github/workflows/ci.yml` runs ruff, mypy, and pytest on every push/PR.
+
+Design notes, telemetry/command specs, task planning, and reusable templates live under `docs/`.
