@@ -20,9 +20,9 @@ class UgoFollowerMapper:
             return list(values)
         if self._half == 0 or self._half * 2 != len(values):
             return list(values)
-        left = values[: self._half]
-        right = values[self._half :]
-        return list(right + left)
+        left = list(values[: self._half])
+        right = list(values[self._half :])
+        return right + left
 
     def _apply_role_mask(self, values: Sequence[float]) -> List[float]:
         role = self.config.follower.role

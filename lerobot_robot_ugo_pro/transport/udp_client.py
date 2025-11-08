@@ -77,8 +77,8 @@ class UgoTelemetryClient(_BaseUdpClient):
             remaining = deadline - loop.time()
             if remaining <= 0:
                 raise asyncio.TimeoutError("Telemetry timeout exceeded")
-            data, _ = await asyncio.wait_for(
-                loop.sock_recvfrom(sock, self.config.buffer_size),
+            data = await asyncio.wait_for(
+                loop.sock_recv(sock, self.config.buffer_size),
                 timeout=remaining,
             )
             frames = self.parser.feed(data)
@@ -145,7 +145,8 @@ class CommandPayload:
             "mode": self.mode,
         }
         if self.metadata:
-            cmd_fields.update(self.metadata)
+            for key, value in self.metadata.items():
+                cmd_fields[str(key)] = str(value)
         cmd_row = "cmd," + ",".join(f"{key}:{value}" for key, value in cmd_fields.items())
         lines = [cmd_row]
         lines.append(_format_csv_row("id", ids))

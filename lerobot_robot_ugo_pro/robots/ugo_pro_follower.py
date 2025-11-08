@@ -14,14 +14,20 @@ from ..transport import CommandPayload, UgoCommandClient, UgoTelemetryClient
 from ..utils import utc_now_ms
 
 try:  # pragma: no cover - exercised only with lerobot installed
-    from lerobot.common.robot import Robot  # type: ignore
-    from lerobot.common.exceptions import DeviceNotConnectedError  # type: ignore
+    from lerobot.common.robot import Robot as _Robot  # type: ignore
 except ImportError:  # pragma: no cover
-    class Robot:  # type: ignore
+    class _Robot:  # type: ignore
         """Fallback Robot base class used in local tests."""
 
-    class DeviceNotConnectedError(RuntimeError):
+Robot = _Robot
+
+try:  # pragma: no cover
+    from lerobot.common.exceptions import DeviceNotConnectedError as _DeviceNotConnectedError  # type: ignore
+except ImportError:  # pragma: no cover
+    class _DeviceNotConnectedError(RuntimeError):
         """Raised when the robot is not connected."""
+
+DeviceNotConnectedError = _DeviceNotConnectedError
 
 
 class UgoProFollower(Robot):
