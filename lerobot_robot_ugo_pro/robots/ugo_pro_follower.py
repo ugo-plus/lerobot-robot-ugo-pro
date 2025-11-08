@@ -6,29 +6,14 @@ import asyncio
 from contextlib import suppress
 from threading import Thread
 from typing import Optional, Sequence
+from lerobot.utils.errors import DeviceNotConnectedError # type: ignore
+from lerobot.robots.robot import Robot # type: ignore
 
 from ..configs import UgoProConfig
 from ..follower import UgoFollowerMapper
 from ..telemetry.frame import JointStateBuffer, TelemetryFrame
 from ..transport import CommandPayload, UgoCommandClient, UgoTelemetryClient
 from ..utils import utc_now_ms
-
-try:  # pragma: no cover - exercised only with lerobot installed
-    from lerobot.common.robot import Robot as _Robot  # type: ignore
-except ImportError:  # pragma: no cover
-    class _Robot:  # type: ignore
-        """Fallback Robot base class used in local tests."""
-
-Robot = _Robot
-
-try:  # pragma: no cover
-    from lerobot.common.exceptions import DeviceNotConnectedError as _DeviceNotConnectedError  # type: ignore
-except ImportError:  # pragma: no cover
-    class _DeviceNotConnectedError(RuntimeError):
-        """Raised when the robot is not connected."""
-
-DeviceNotConnectedError = _DeviceNotConnectedError
-
 
 class UgoProFollower(Robot):
     """Connects LeRobot to the UDP telemetry/command pipes of the Ugo Pro."""
