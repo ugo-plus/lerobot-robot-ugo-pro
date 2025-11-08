@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import socket
 from dataclasses import dataclass, field
-from typing import Iterable, List, Optional, Sequence, Union
+from typing import Awaitable, Callable, Iterable, List, Optional, Sequence, Union
 
 from ..telemetry import TelemetryFrame, TelemetryParser
 from ..telemetry.frame import JointStateBuffer
@@ -89,10 +89,16 @@ class UgoTelemetryClient(_BaseUdpClient):
         buffer: JointStateBuffer,
         *,
         timeout_sec: Optional[float] = None,
+        on_timeout: Optional[Callable[[], Awaitable[None]]] = None,
     ) -> None:
         """Continuously receive telemetry and store the latest frame into a buffer."""
         while True:
-            frame = await self.next_frame(timeout_sec=timeout_sec)
+            try:
+                frame = await self.next_frame(timeout_sec=timeout_sec)
+            except asyncio.TimeoutError:
+                if on_timeout:
+                    await on_timeout()
+                continue
             buffer.update(frame)
 
 
@@ -120,8 +126,8 @@ class CommandPayload:
     speeds_raw: Optional[Sequence[int]] = None
     torques_raw: Optional[Sequence[int]] = None
     mode: str = "abs"
-    sync_fields: Optional[Sequence[str]] = None
-    metadata: Optional[dict[str, str]] = None
+    sync_fields: Optional[Sequence[Union[int, float, str]]] = None
+    metadata: Optional[dict[str, Union[int, float, str]]] = None
 
     def to_lines(
         self,
@@ -185,18 +191,35 @@ class UgoCommandClient(_BaseUdpClient):
         loop = asyncio.get_running_loop()
         await loop.sock_sendall(sock, packet)
 
+    def build_hold_payload(
+        self,
+        ids: Sequence[int],
+        *,
+        target_angles_deg: Optional[Sequence[float]] = None,
+        metadata: Optional[dict[str, Union[int, float, str]]] = None,
+    ) -> CommandPayload:
+        if target_angles_deg is None:
+            target_angles_deg = [0.0 for _ in ids]
+        if len(target_angles_deg) != len(ids):
+            raise ValueError("target_angles_deg must match ids length for hold payload")
+        return CommandPayload(
+            ids=ids,
+            target_angles_deg=target_angles_deg,
+            mode="hold",
+            metadata=metadata,
+        )
+
     async def send_hold(
         self,
         ids: Sequence[int],
         *,
-        metadata: Optional[dict[str, str]] = None,
+        target_angles_deg: Optional[Sequence[float]] = None,
+        metadata: Optional[dict[str, Union[int, float, str]]] = None,
     ) -> None:
         """Send a hold command to freeze the MCU when telemetry is stale."""
-        zero_angles = [0.0 for _ in ids]
-        payload = CommandPayload(
-            ids=ids,
-            target_angles_deg=zero_angles,
-            mode="hold",
+        payload = self.build_hold_payload(
+            ids,
+            target_angles_deg=target_angles_deg,
             metadata=metadata,
         )
         await self.send_payload(payload)

@@ -11,6 +11,7 @@ from ..configs import UgoProConfig
 from ..follower import UgoFollowerMapper
 from ..telemetry.frame import JointStateBuffer, TelemetryFrame
 from ..transport import CommandPayload, UgoCommandClient, UgoTelemetryClient
+from ..utils import utc_now_ms
 
 try:  # pragma: no cover - exercised only with lerobot installed
     from lerobot.common.robot import Robot  # type: ignore
@@ -75,6 +76,7 @@ class UgoProFollower(Robot):
             self._telemetry_client.pump_forever(
                 self._buffer,
                 timeout_sec=self.config.telemetry_udp.timeout_sec,
+                on_timeout=self._handle_telemetry_timeout,
             )
         )
 
@@ -110,6 +112,7 @@ class UgoProFollower(Robot):
 
     def get_observation(self) -> dict:
         frame = self._latest_frame()
+        age_ms = max(0, utc_now_ms() - frame.received_at_ms)
         observation = {
             "ids": list(frame.ids),
             "angles_deg": list(frame.angles_deg),
@@ -118,6 +121,7 @@ class UgoProFollower(Robot):
             "target_angles_deg": list(frame.target_angles_deg),
             "metadata": dict(frame.metadata),
             "timestamp_ms": frame.received_at_ms,
+            "packet_age_ms": age_ms,
         }
         return observation
 
@@ -131,6 +135,25 @@ class UgoProFollower(Robot):
             target_angles_deg=targets,
         )
         self._run_coro(self._command_client.send_payload(payload))
+
+    async def _handle_telemetry_timeout(self) -> None:
+        """Send a mode:hold command when telemetry silence exceeds the timeout."""
+        if not self._connected:
+            return
+        frame = self._buffer.snapshot()
+        if frame:
+            joint_map = frame.to_joint_dict()
+            targets = [
+                joint_map.get(joint_id, {}).get("angle_deg", 0.0)
+                for joint_id in self.config.joint_ids
+            ]
+        else:
+            targets = [0.0 for _ in self.config.joint_ids]
+        await self._command_client.send_hold(
+            self.config.joint_ids,
+            target_angles_deg=targets,
+            metadata={"reason": "telemetry_timeout"},
+        )
 
     # ------------------------------------------------------------- no-op helpers
     def configure(self) -> None:

@@ -32,6 +32,11 @@ finally:
     robot.disconnect()
 ```
 
+### Fail-safe Behavior
+
+Per `docs/ugo_arm_monitoring_spec.md`, the follower monitors MCU telemetry age.  
+If packets stop arriving beyond the configured timeout (default 0.2 s), the robot automatically issues a `mode:hold` command with the latest joint angles and tags it with `reason=telemetry_timeout` so the MCU freezes the posture safely.
+
 ## Development
 
 Install the package in editable mode:

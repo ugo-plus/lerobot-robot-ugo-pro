@@ -5,6 +5,7 @@ import pytest
 
 from lerobot_robot_ugo_pro.transport import (
     CommandPayload,
+    UgoCommandClient,
     UgoTelemetryClient,
     UgoUdpClientConfig,
 )
@@ -68,3 +69,15 @@ def test_command_payload_to_lines():
     assert "tar,10,-10" in lines[2]
     assert "spd,100,100" in lines[3]
     assert "trq,200,200" in lines[4]
+
+
+def test_build_hold_payload_uses_provided_targets():
+    client = UgoCommandClient(UgoUdpClientConfig())
+    payload = client.build_hold_payload(
+        ids=[1, 2],
+        target_angles_deg=[3.0, -3.0],
+        metadata={"reason": "test"},
+    )
+    lines = payload.to_lines(UgoUdpClientConfig())
+    assert "tar,30,-30" in lines[2]
+    assert "reason:test" in lines[0]
