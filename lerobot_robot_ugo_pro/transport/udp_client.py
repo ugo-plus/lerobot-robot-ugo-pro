@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import socket
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Awaitable, Callable, Iterable, List, Optional, Sequence, Union
 
 from ..telemetry import TelemetryFrame, TelemetryParser

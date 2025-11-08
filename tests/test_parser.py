@@ -1,7 +1,5 @@
 import math
 
-import pytest
-
 from lerobot_robot_ugo_pro.telemetry import TelemetryParser
 
 
