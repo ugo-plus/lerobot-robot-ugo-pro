@@ -4,8 +4,7 @@ import time
 
 from typing import Callable, cast
 
-from lerobot_robot_ugo_pro.configs import UgoProConfig
-from lerobot_robot_ugo_pro.robots import UgoProFollower
+from lerobot_robot_ugo_pro import UgoPro, UgoProConfig
 from lerobot_robot_ugo_pro.telemetry import JointStateBuffer, TelemetryFrame, TelemetryParser
 from lerobot_robot_ugo_pro.transport import UgoCommandClient, UgoTelemetryClient
 
@@ -37,7 +36,7 @@ class DummyCommandClient:
         return "cmd"
 
 
-def _make_robot(config: UgoProConfig) -> tuple[UgoProFollower, JointStateBuffer, DummyCommandClient]:
+def _make_robot(config: UgoProConfig) -> tuple[UgoPro, JointStateBuffer, DummyCommandClient]:
     buffer = JointStateBuffer()
     parser = TelemetryParser(buffer=buffer)
     parser.latest_ids = config.all_joint_ids
@@ -50,7 +49,7 @@ def _make_robot(config: UgoProConfig) -> tuple[UgoProFollower, JointStateBuffer,
         Callable[[], UgoCommandClient],
         lambda: cast(UgoCommandClient, command_client),
     )
-    robot = UgoProFollower(
+    robot = UgoPro(
         config,
         telemetry_parser=parser,
         telemetry_client_factory=telemetry_factory,

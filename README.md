@@ -4,8 +4,8 @@ This repository packages a full follower implementation that bridges the [ugo Pr
 
 Key pieces live under `lerobot_robot_ugo_pro/`:
 
-- `configs/ugo_pro.py` — `UgoProConfig`, a BYOH-registered `RobotConfig`.
-- `robots/ugo_pro_follower.py` — the `Robot` subclass with lifecycle, observation/action schemas, and safety hooks.
+- `config_ugo_pro.py` — `UgoProConfig`, a BYOH-registered `RobotConfig`.
+- `ugo_pro.py` — the `Robot` subclass with lifecycle, observation/action schemas, and safety hooks.
 - `telemetry/` — streaming CSV parser (`TelemetryParser`) and `TelemetryFrame` dataclass.
 - `transport/` — UDP telemetry listener and command client with a 10 ms rate limiter.
 - `follower/mapper.py` — leader→joint mapping with follower gain, mirror, and role support.
@@ -18,9 +18,11 @@ Design references, UDP specs, and the end-to-end task plan are documented in `do
 
 ```bash
 pip install lerobot-robot-ugo-pro
+# or while developing:
+python -m pip install -e ".[dev]"
 ```
 
-The package exposes the `ugo_pro` robot type via the `lerobot.robots` entry-point, so once installed it is automatically available to the LeRobot CLI tools.
+The package exposes the `ugo_pro` robot type via the `lerobot.robots` entry-point, so once installed it is automatically available to the LeRobot CLI tools. When running straight from a git checkout (before packaging), set `PYTHONPATH=$PWD` or `LEROBOT_THIRD_PARTY_MODULES=lerobot_robot_ugo_pro.ugo_pro` so the follower class is importable.
 
 ---
 
@@ -30,9 +32,9 @@ The package exposes the `ugo_pro` robot type via the `lerobot.robots` entry-poin
 
 ```bash
 lerobot-teleoperate \
-  --robot.type=lerobot_robot_ugo_pro \
-  --robot.id=ugo_pro_dual \
-  --teleop.type=keyboard_ee
+  --robot.type=ugo_pro \
+  --robot.id=my_ugo_pro \
+  --teleop.type=gamepad
 ```
 
 Important flags:
@@ -43,7 +45,7 @@ Important flags:
 ### Python API
 
 ```python
-from lerobot_robot_ugo_pro import UgoProConfig, UgoProFollower
+from lerobot_robot_ugo_pro import UgoProConfig, UgoPro
 
 config = UgoProConfig(
     telemetry_host="0.0.0.0",
@@ -51,7 +53,7 @@ config = UgoProConfig(
     mcu_host="192.168.4.40",
     command_port=8888,
 )
-robot = UgoProFollower(config)
+robot = UgoPro(config)
 robot.connect()
 
 try:
@@ -89,7 +91,7 @@ Joint limits, default velocity/torque ceilings, and command history depth are al
 ## Telemetry & Command Path
 
 - **Telemetry**: `UgoTelemetryClient` binds to `telemetry_port`, decodes CSV packets via `TelemetryParser`, and stores the latest `TelemetryFrame` inside a thread-safe `JointStateBuffer`.
-- **Observation**: `UgoProFollower.get_observation()` translates the frame into per-joint keys (`joint_<id>.pos_deg`, optional `vel_raw`, `cur_raw`, `target_deg`), VSD metadata, status fields, and camera outputs.
+- **Observation**: `UgoPro.get_observation()` translates the frame into per-joint keys (`joint_<id>.pos_deg`, optional `vel_raw`, `cur_raw`, `target_deg`), VSD metadata, status fields, and camera outputs.
 - **Action**: `UgoFollowerMapper` normalizes leader input into ordered joint targets (applying mirror mode, follower role, and gain), while `UgoCommandClient` builds the MCU CSV (`cmd/id/tar/spd/trq/sync`) and rate-limits to the configured 10 ms cycle.
 - **Fail-safe**: If telemetry stalls beyond `timeout_sec`, the follower automatically sends `mode:hold` with the last safe targets so the MCU freezes posture.
 
@@ -123,4 +125,4 @@ Need reference data while developing? See:
 
 ## Support & Future Work
 
-The implementation already covers telemetry parsing, follower mapping, UDP transport, and LeRobot integration. Upcoming work (see `TASK.md`) includes feedback channels to teleoperators, dataset tooling, and expanded monitoring hooks. Contributions are welcome—please open an issue or PR if you extend the mapper, transport, or docs for your deployment.
+The implementation already covers telemetry parsing, follower mapping, UDP transport, and LeRobot integration. Upcoming work includes feedback channels to teleoperators, dataset tooling, and expanded monitoring hooks. Contributions are welcome—please open an issue or PR if you extend the mapper, transport, or docs for your deployment.

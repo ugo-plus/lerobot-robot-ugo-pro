@@ -13,16 +13,16 @@ from lerobot.cameras.utils import make_cameras_from_configs  # type: ignore
 from lerobot.utils.errors import DeviceAlreadyConnectedError, DeviceNotConnectedError  # type: ignore
 from lerobot.robots.robot import Robot  # type: ignore
 
-from ..configs.ugo_pro import UgoProConfig
-from ..follower.mapper import UgoFollowerMapper
-from ..telemetry import JointStateBuffer, TelemetryFrame, TelemetryParser
-from ..transport import UgoCommandClient, UgoTelemetryClient
-from ..utils import now_ms
+from .config_ugo_pro import UgoProConfig
+from .follower.mapper import UgoFollowerMapper
+from .telemetry import JointStateBuffer, TelemetryFrame, TelemetryParser
+from .transport import UgoCommandClient, UgoTelemetryClient
+from .utils import now_ms
 
 logger = logging.getLogger(__name__)
 
 
-class UgoProFollower(Robot):
+class UgoPro(Robot):
     """Follower that talks to the ugo Controller MCU via UDP."""
 
     config_class = UgoProConfig
@@ -129,7 +129,7 @@ class UgoProFollower(Robot):
         return True
 
     def calibrate(self) -> None:
-        logger.debug("UgoProFollower does not require explicit calibration at this stage.")
+        logger.debug("UgoPro does not require explicit calibration at this stage.")
 
     def configure(self) -> None:
         ids = self._telemetry_parser.latest_ids or self.config.all_joint_ids

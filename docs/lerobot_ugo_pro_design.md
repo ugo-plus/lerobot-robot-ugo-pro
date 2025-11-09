@@ -65,7 +65,7 @@ graph LR
     end
     subgraph lerobot_robot_ugo_pro
         B1[RobotConfig<br>UgoProConfig]
-        B2[Robot Class<br>UgoProFollower]
+        B2[Robot Class<br>UgoPro]
         B3[UDP Transport<br>Telemetry/Command]
         B4[Obs/Act features<br>joint_id.pos_deg]
     end
@@ -84,7 +84,7 @@ graph LR
 
 ```mermaid
 sequenceDiagram
-    participant PC as UgoProFollower
+    participant PC as UgoPro
     participant MCU as ugo Controller MCU
     loop every 10ms
         MCU->>PC: UDP packet<br>vsd/id/agl/vel/(cur)
@@ -100,11 +100,11 @@ sequenceDiagram
 ## 3. 全体アーキテクチャ
 
 - **物理構成**: ugo Controller MCU ↔ RS-485 バス（Feetech/Robotis 混在） ↔ サーボ群。PC とは Ethernet で双方向 UDP。フォロワーロボットは teleoperator（leader）や記録済みデータからの関節目標を受け取り、MCU へ中継する。
-- **ソフト構成**: 新規パッケージ `lerobot_robot_ugo_pro`（BYOH の命名規約に沿う）内に `UgoProFollower` クラスを実装し、`lerobot` の `Robot` リストへ登録。テレメトリ解析・UDP 送受信・フォロワーロジックをサブモジュールへ分割。
+- **ソフト構成**: 新規パッケージ `lerobot_robot_ugo_pro`（BYOH の命名規約に沿う）内に `UgoPro` クラスを実装し、`lerobot` の `Robot` リストへ登録。テレメトリ解析・UDP 送受信・フォロワーロジックをサブモジュールへ分割。
 - **通信経路**:
   - MCU → PC: `ugo_arm_monitoring_spec.md` に従った CSV テキストを 10 ms 周期で受信、`TelemetryParser` で構造化。
   - PC → MCU: `cmd`/`tar`/`spd`/`trq` 行を生成して UDP 送信。フォロワー用に左右腕の行動を同一パケットにまとめる。
-- **LeRobot 連携**: `UgoProConfig` でネットワーク設定・ジョイントマップ・安全限界を表現。`UgoProFollower` が `Robot` インターフェイス (`connect`, `disconnect`, `get_observation`, `send_action`, `is_calibrated`, `calibrate`, `configure`) を満たし、`lerobot-teleop`/`lerobot-record`/`lerobot-train` から利用できる状態にする。
+- **LeRobot 連携**: `UgoProConfig` でネットワーク設定・ジョイントマップ・安全限界を表現。`UgoPro` が `Robot` インターフェイス (`connect`, `disconnect`, `get_observation`, `send_action`, `is_calibrated`, `calibrate`, `configure`) を満たし、`lerobot-teleop`/`lerobot-record`/`lerobot-train` から利用できる状態にする。
 
 ```mermaid
 flowchart TB
@@ -116,7 +116,7 @@ flowchart TB
     subgraph PC Layer
         Transport[UDP Transport<br>Telemetry/Command]
         Parser[TelemetryParser]
-        RobotClass[UgoProFollower]
+        RobotClass[UgoPro]
         Cameras
     end
     subgraph LeRobot Tools
@@ -138,13 +138,9 @@ BYOH の 4 つのコアコンベンションに従い、以下のレイアウト
 lerobot_robot_ugo_pro/
 ├── pyproject.toml / README.md / LICENSE
 └── src/lerobot_robot_ugo_pro/
-    ├── __init__.py                         # UgoProConfig / UgoProFollower を公開
-    ├── configs/
-    │   ├── __init__.py
-    │   └── ugo_pro.py                      # UgoProConfig, ArmJointMap dataclass
-    ├── robots/
-    │   ├── __init__.py
-    │   └── ugo_pro_follower.py             # Robot 実装
+    ├── __init__.py                         # UgoProConfig / UgoPro を公開
+    ├── config_ugo_pro.py                   # UgoProConfig, ArmJointMap dataclass
+    ├── ugo_pro.py                          # Robot 実装
     ├── transport/
     │   ├── __init__.py
     │   ├── udp_client.py                   # UgoTelemetryClient, UgoCommandClient
@@ -168,23 +164,23 @@ lerobot_robot_ugo_pro/
 `pyproject.toml` では以下を最低限定義する:
 
 - `project.name = "lerobot_robot_ugo_pro"`（BYOH 規約の接頭辞）
-- `project.entry-points."lerobot.robots" = { ugo_pro = "lerobot_robot_ugo_pro:UgoProFollower" }`
+- `project.entry-points."lerobot.robots" = { ugo_pro = "lerobot_robot_ugo_pro:UgoPro" }`
 - `dependencies = ["lerobot>=0.4.0", ...]`
 
-`lerobot-teleoperate` などは上記 entry point を経由して `UgoProFollower` を import しに来るため、Config/Robot を `__init__.py` で re-export することが必須。
+`lerobot-teleoperate` などは上記 entry point を経由して `UgoPro` を import しに来るため、Config/Robot を `__init__.py` で re-export することが必須。
 
 ```mermaid
 graph TD
     root[lerobot_robot_ugo_pro]
     root --> pkg[src/lerobot_robot_ugo_pro]
-    pkg --> configs
-    pkg --> robots
+    pkg --> cfgmodule[config_ugo_pro.py]
+    pkg --> robotmodule[ugo_pro.py]
     pkg --> transport
     pkg --> telemetry
     pkg --> follower
     pkg --> tests
-    configs --> cfgfile[ugo_pro.py<br>UgoProConfig]
-    robots --> follower_py[ugo_pro_follower.py<br>Robot impl]
+    cfgmodule --> cfgfile[UgoProConfig]
+    robotmodule --> follower_py[UgoPro<br>Robot impl]
     transport --> udp[udp_client.py]
     telemetry --> parser[parser.py]
     follower --> mapper[mapper.py]
@@ -269,7 +265,7 @@ flowchart LR
 ```mermaid
 sequenceDiagram
     participant Leader
-    participant Follower as UgoProFollower
+    participant Follower as UgoPro
     participant Mapper
     participant Command as UgoCommandClient
     participant MCU
@@ -281,7 +277,7 @@ sequenceDiagram
     MCU-->>Follower: telemetry via TelemetryClient
 ```
 
-### 5.4 UgoProFollower (Robot)
+### 5.4 UgoPro (Robot)
 
 - `config_class = UgoProConfig`, `name = "ugo_pro"`.
 - **Observation features**（未接続時でも計算可能）:
@@ -333,7 +329,7 @@ stateDiagram-v2
 
 ### 5.5 Teleoperator / Follower ブリッジ
 
-- フォロワーモードでは `lerobot-teleop` CLI で指定された teleoperator（例: `lerobot_teleoperator_teleop` の leader arm）からのアクション辞書を `UgoProFollower` の `send_action` へそのまま受け渡す。
+- フォロワーモードでは `lerobot-teleop` CLI で指定された teleoperator（例: `lerobot_teleoperator_teleop` の leader arm）からのアクション辞書を `UgoPro` の `send_action` へそのまま受け渡す。
 - `follower/mapper.py` では以下を担当:
   - Leader 関節名（例: `leader_joint_1.pos`）→ UgoPro ID（`joint_11.target_deg`）へのマッピング。Config で任意に定義できるようにする。
   - `mirror_mode=True` の際は左右 ID を入れ替え、符号を反転させる。
@@ -402,7 +398,7 @@ flowchart LR
 - **同期**: Leader から 60 Hz で受け取る指令を 10 ms 単位の送信スロットへ整列。指令遅延が 20 ms を超える場合は `mode:hold` を自動挿入。
 - **左右腕サポート**: Config の `follower_role`（`"dual" | "left-only" | "right-only"`）を参照し、不要な腕は `tar` を前回値で保持。`Teleoperator` が片腕しか持たないケースでも `id` 行の並びを維持する。
 - **安全停止**: `timeout_sec` を超えたら `send_action` から `mode:hold` を送信し、`tar` を最後の安全姿勢（例: 中立 0 deg）へ補間。
-- **記録モード**: `lerobot-record` から `UgoProFollower` を呼び出した場合は、`TelemetryFrame` + 送信 `tar` を dataset に記録し、模倣学習用データセットを生成できるよう `Observation` に `cmd_history` を含める。
+- **記録モード**: `lerobot-record` から `UgoPro` を呼び出した場合は、`TelemetryFrame` + 送信 `tar` を dataset に記録し、模倣学習用データセットを生成できるよう `Observation` に `cmd_history` を含める。
 
 ```mermaid
 gantt
@@ -460,7 +456,7 @@ stateDiagram-v2
 
 - ランタイム依存: `lerobot`, `numpy`, `pydantic` or `pydantic-core`（Config バリデーション）、`asyncio` 標準ライブラリ、`structlog`（任意）、`opencv-python`（カメラ運用時）。
 - テスト依存: `pytest`, `pytest-asyncio`, `pytest-mock`.
-- Python 3.10+（LeRobot 本体と整合）。`pyproject` の `project.entry-points."lerobot.robots"` に `lerobot_robot_ugo_pro = "lerobot_robot_ugo_pro:UgoProFollower"` を登録して BYOH 規約を満たす。
+- Python 3.10+（LeRobot 本体と整合）。`pyproject` の `project.entry-points."lerobot.robots"` に `lerobot_robot_ugo_pro = "lerobot_robot_ugo_pro:UgoPro"` を登録して BYOH 規約を満たす。
 
 ```mermaid
 graph LR
@@ -485,7 +481,7 @@ graph LR
 ## 10. 開発・テスト戦略
 
 - **単体テスト**: `telemetry/test_parser.py` で `ugo_arm_monitoring_spec.md` のサンプル行を用いたパース試験、`transport/test_udp_client.py` で `asyncio.DatagramEndpoint` をモックしコマンド生成を検証。
-- **統合テスト**: `tests/test_robot_features.py` で `UgoProFollower.observation_features`/`action_features` が Config から決まることを確認。`lerobot-robot-xarm` で用いられている `DeviceNotConnectedError` ハンドリングを流用し、接続状態テストを追加。
+- **統合テスト**: `tests/test_robot_features.py` で `UgoPro.observation_features`/`action_features` が Config から決まることを確認。`lerobot-robot-xarm` で用いられている `DeviceNotConnectedError` ハンドリングを流用し、接続状態テストを追加。
 - **HIL（Hardware-In-the-Loop）**: 実機 ugo_pro とネットワーク直結し、以下を記録。
   1. 接続から初回テレメトリ取得までの時間
   2. `send_action -> telemetry round-trip` の遅延

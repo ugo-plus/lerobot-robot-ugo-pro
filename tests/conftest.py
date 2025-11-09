@@ -10,7 +10,7 @@ REFS = ROOT / "refs" / "lerobot" / "src"
 if REFS.exists():
     sys.path.insert(0, str(REFS))
 
-from lerobot_robot_ugo_pro.configs import UgoProConfig  # noqa: E402
+from lerobot_robot_ugo_pro import UgoProConfig  # noqa: E402
 
 
 @pytest.fixture()

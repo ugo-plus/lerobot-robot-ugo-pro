@@ -1,6 +1,6 @@
 """Public package surface for the ugo pro follower integration."""
 
-from .configs.ugo_pro import UgoProConfig
-from .robots.ugo_pro_follower import UgoProFollower
+from .config_ugo_pro import UgoProConfig
+from .ugo_pro import UgoPro
 
-__all__ = ["UgoProConfig", "UgoProFollower"]
+__all__ = ["UgoProConfig", "UgoPro"]

@@ -3,9 +3,9 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "lerobot-robot-ugo-pro"
+name = "lerobot_robot_ugo_pro"
 version = "0.1.0"
-description = "LeRobot follower implementation for the Ugo Pro humanoid robot"
+description = "LeRobot follower implementation for the ugo Pro humanoid robot"
 requires-python = ">=3.10"
 authors = [
     { name = "ugo" },
@@ -27,7 +27,11 @@ dev = [
 ]
 
 [project.entry-points."lerobot.robots"]
-ugo_pro = "lerobot_robot_ugo_pro.robots.ugo_pro_follower:UgoProFollower"
+ugo_pro = "lerobot_robot_ugo_pro.ugo_pro:UgoPro"
+
+[project.urls]
+"Homepage" = "https://github.com/ugo-plus/lerobot-robot-ugo-pro"
+"Bug Tracker" = "https://github.com/ugo-plus/lerobot-robot-ugo-pro/issues"
 
 [tool.setuptools.packages.find]
 exclude = ["tests*"]

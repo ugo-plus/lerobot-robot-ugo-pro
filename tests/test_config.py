@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from lerobot_robot_ugo_pro.configs import DEFAULT_LEFT_IDS, DEFAULT_RIGHT_IDS, UgoProConfig
+from lerobot_robot_ugo_pro.config_ugo_pro import DEFAULT_LEFT_IDS, DEFAULT_RIGHT_IDS, UgoProConfig
 
 
 def test_config_orders_ids_by_role(ugo_config: UgoProConfig) -> None:

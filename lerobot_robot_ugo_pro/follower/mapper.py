@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Mapping
 
-from ..configs.ugo_pro import UgoProConfig
+from ..config_ugo_pro import UgoProConfig
 
 
 VALID_MODES = {"abs", "rel", "hold"}

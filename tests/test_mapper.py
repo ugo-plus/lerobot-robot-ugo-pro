@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from lerobot_robot_ugo_pro.configs import UgoProConfig
+from lerobot_robot_ugo_pro import UgoProConfig
 from lerobot_robot_ugo_pro.follower import UgoFollowerMapper
 
 
