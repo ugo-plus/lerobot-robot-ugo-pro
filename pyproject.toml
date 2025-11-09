@@ -13,8 +13,6 @@ authors = [
 readme = "README.md"
 license = { text = "Apache-2.0" }
 dependencies = [
-    "pydantic>=2.6",
-    "typing-extensions>=4.9",
     "lerobot>=0.4",
 ]
 
