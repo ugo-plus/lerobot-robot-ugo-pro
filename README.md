@@ -2,6 +2,8 @@
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 [![CI](https://github.com/ugo-plus/lerobot-robot-ugo-pro/actions/workflows/ci.yml/badge.svg)](https://github.com/ugo-plus/lerobot-robot-ugo-pro/actions/workflows/ci.yml)
 
+![IndexImage](./docs/assets/ugo_immitation_learning_kit.jpg)
+
 This repository packages a full follower implementation that bridges the [ugo Pro R&D model](https://ugo.plus/products/ugo-pro-rd/) with Hugging Face’s [LeRobot](https://github.com/huggingface/lerobot) ecosystem. It complies with the Bring Your Own Hardware (BYOH) conventions so the robot is autodiscovered by `lerobot-teleoperate`, `lerobot-record`, etc.
 
 Key pieces live under `lerobot_robot_ugo_pro/`:
