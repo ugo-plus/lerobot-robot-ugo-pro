@@ -2,9 +2,12 @@ from __future__ import annotations
 
 import time
 
+from typing import Callable, cast
+
 from lerobot_robot_ugo_pro.configs import UgoProConfig
 from lerobot_robot_ugo_pro.robots import UgoProFollower
 from lerobot_robot_ugo_pro.telemetry import JointStateBuffer, TelemetryFrame, TelemetryParser
+from lerobot_robot_ugo_pro.transport import UgoCommandClient, UgoTelemetryClient
 
 
 class DummyTelemetryClient:
@@ -39,11 +42,19 @@ def _make_robot(config: UgoProConfig) -> tuple[UgoProFollower, JointStateBuffer,
     parser = TelemetryParser(buffer=buffer)
     parser.latest_ids = config.all_joint_ids
     command_client = DummyCommandClient()
+    telemetry_factory: Callable[[], UgoTelemetryClient] = cast(
+        Callable[[], UgoTelemetryClient],
+        lambda: cast(UgoTelemetryClient, DummyTelemetryClient()),
+    )
+    command_factory: Callable[[], UgoCommandClient] = cast(
+        Callable[[], UgoCommandClient],
+        lambda: cast(UgoCommandClient, command_client),
+    )
     robot = UgoProFollower(
         config,
         telemetry_parser=parser,
-        telemetry_client_factory=lambda: DummyTelemetryClient(),
-        command_client_factory=lambda: command_client,
+        telemetry_client_factory=telemetry_factory,
+        command_client_factory=command_factory,
     )
     robot.connect()
     return robot, buffer, command_client
