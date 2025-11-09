@@ -1,154 +1,270 @@
-"""LeRobot Robot implementation for the Ugo Pro follower."""
+"""LeRobot Robot implementation for the ugo pro follower."""
 
 from __future__ import annotations
 
-import asyncio
-from contextlib import suppress
-from threading import Thread
-from typing import Optional, Sequence
-from lerobot.utils.errors import DeviceNotConnectedError # type: ignore
-from lerobot.robots.robot import Robot # type: ignore
+import copy
+import logging
+import math
+from collections import deque
+from functools import cached_property
+from typing import Any, Callable
 
-from ..configs import UgoProConfig
-from ..follower import UgoFollowerMapper
-from ..telemetry.frame import JointStateBuffer, TelemetryFrame
-from ..transport import CommandPayload, UgoCommandClient, UgoTelemetryClient
-from ..utils import utc_now_ms
+from lerobot.cameras.utils import make_cameras_from_configs  # type: ignore
+from lerobot.utils.errors import DeviceAlreadyConnectedError, DeviceNotConnectedError  # type: ignore
+from lerobot.robots.robot import Robot  # type: ignore
+
+from ..configs.ugo_pro import UgoProConfig
+from ..follower.mapper import UgoFollowerMapper
+from ..telemetry import JointStateBuffer, TelemetryFrame, TelemetryParser
+from ..transport import UgoCommandClient, UgoTelemetryClient
+from ..utils import now_ms
+
+logger = logging.getLogger(__name__)
+
 
 class UgoProFollower(Robot):
-    """Connects LeRobot to the UDP telemetry/command pipes of the Ugo Pro."""
+    """Follower that talks to the ugo Controller MCU via UDP."""
 
-    def __init__(self, config: Optional[UgoProConfig] = None) -> None:
-        super().__init__()  # type: ignore[misc]
-        self.config = config or UgoProConfig()
-        self._telemetry_client = UgoTelemetryClient(self.config.telemetry_udp)
-        self._command_client = UgoCommandClient(self.config.command_udp)
-        self._buffer = JointStateBuffer()
-        self._mapper = UgoFollowerMapper(self.config)
+    config_class = UgoProConfig
+    name = "ugo_pro"
 
-        self._loop: Optional[asyncio.AbstractEventLoop] = None
-        self._loop_thread: Optional[Thread] = None
-        self._telemetry_task: Optional[asyncio.Task] = None
-        self._connected = False
+    def __init__(
+        self,
+        config: UgoProConfig,
+        *,
+        telemetry_parser: TelemetryParser | None = None,
+        telemetry_client_factory: Callable[[], UgoTelemetryClient] | None = None,
+        command_client_factory: Callable[[], UgoCommandClient] | None = None,
+    ):
+        super().__init__(config)
+        self.config = config
+        self._joint_buffer = telemetry_parser.buffer if telemetry_parser else JointStateBuffer()
+        self._telemetry_parser = telemetry_parser or TelemetryParser(buffer=self._joint_buffer)
+        self._telemetry_client_factory = telemetry_client_factory
+        self._command_client_factory = command_client_factory
+        self._telemetry_client: UgoTelemetryClient | None = None
+        self._command_client: UgoCommandClient | None = None
+        self._mapper = UgoFollowerMapper(config)
+        self._last_sent_targets = config.default_targets_deg()
+        self._cmd_history: deque[dict[str, Any]] = deque(maxlen=config.command_history_size)
+        self._is_connected = False
+        self.cameras = make_cameras_from_configs(config.cameras)
 
-    # --------------------------------------------------------------------- utils
-    def _ensure_loop(self) -> None:
-        if self._loop:
-            return
+    # ------------------------------------------------------------------ #
+    @cached_property
+    def observation_features(self) -> dict[str, Any]:
+        features: dict[str, Any] = {}
+        for joint_id in self.config.all_joint_ids:
+            features[f"joint_{joint_id}.pos_deg"] = float
+            if self.config.expose_velocity:
+                features[f"joint_{joint_id}.vel_raw"] = float
+            if self.config.expose_current:
+                features[f"joint_{joint_id}.cur_raw"] = float
+            if self.config.expose_commanded:
+                features[f"joint_{joint_id}.target_deg"] = float
+        features["packet_age_ms"] = float
+        features["vsd_interval_ms"] = float
+        features["vsd_read_ms"] = float
+        features["vsd_write_ms"] = float
+        features["status.health"] = str
+        features["status.missing_fields"] = int
+        features["cmd_history"] = list
+        for name, cam_cfg in self.config.cameras.items():
+            features[f"camera_{name}"] = (cam_cfg.height, cam_cfg.width, 3)
+        return features
 
-        self._loop = asyncio.new_event_loop()
+    @cached_property
+    def action_features(self) -> dict[str, Any]:
+        features: dict[str, Any] = {}
+        for joint_id in self.config.all_joint_ids:
+            features[f"joint_{joint_id}.target_deg"] = float
+            features[f"joint_{joint_id}.velocity_raw"] = float
+            features[f"joint_{joint_id}.torque_raw"] = float
+        features["mode"] = str
+        features["teleop.meta.timestamp"] = float
+        return features
 
-        def _runner() -> None:
-            assert self._loop is not None
-            asyncio.set_event_loop(self._loop)
-            self._loop.run_forever()
+    # ------------------------------------------------------------------ #
+    @property
+    def is_connected(self) -> bool:
+        return self._is_connected
 
-        self._loop_thread = Thread(target=_runner, daemon=True)
-        self._loop_thread.start()
+    def connect(self, calibrate: bool = True) -> None:
+        if self.is_connected:
+            raise DeviceAlreadyConnectedError(f"{self} already connected")
 
-    def _run_coro(self, coro):
-        if not self._loop:
-            raise DeviceNotConnectedError("Robot loop is not running")
-        future = asyncio.run_coroutine_threadsafe(coro, self._loop)
-        return future.result()
+        self._telemetry_client = self._build_telemetry_client()
+        self._telemetry_client.start(on_timeout=self._handle_timeout)
+        self._command_client = self._build_command_client()
+        self._command_client.connect()
 
-    # ------------------------------------------------------------------ lifecycle
-    def connect(self) -> None:
-        if self._connected:
-            return
-        self._ensure_loop()
-        self._run_coro(self._async_connect())
-        self._connected = True
+        for cam in self.cameras.values():
+            cam.connect()
 
-    async def _async_connect(self) -> None:
-        await self._telemetry_client.connect()
-        await self._command_client.connect()
-        self._telemetry_task = asyncio.create_task(
-            self._telemetry_client.pump_forever(
-                self._buffer,
-                timeout_sec=self.config.telemetry_udp.timeout_sec,
-                on_timeout=self._handle_telemetry_timeout,
-            )
-        )
+        if calibrate:
+            self.calibrate()
+        self.configure()
+        self._is_connected = True
+        self._wait_for_joint_map()
 
     def disconnect(self) -> None:
-        if not self._connected:
+        if not self.is_connected:
             return
-        self._run_coro(self._async_disconnect())
-        self._connected = False
-        if self._loop:
-            self._loop.call_soon_threadsafe(self._loop.stop)
-        if self._loop_thread:
-            self._loop_thread.join(timeout=1.0)
-        self._loop = None
-        self._loop_thread = None
+        if self._telemetry_client:
+            self._telemetry_client.stop()
+            self._telemetry_client = None
+        if self._command_client:
+            self._command_client.close()
+            self._command_client = None
+        for cam in self.cameras.values():
+            try:
+                cam.disconnect()
+            except Exception:
+                logger.debug("Failed to disconnect camera", exc_info=True)
+        self._is_connected = False
 
-    async def _async_disconnect(self) -> None:
-        if self._telemetry_task:
-            self._telemetry_task.cancel()
-            with suppress(asyncio.CancelledError):
-                await self._telemetry_task
-        await self._telemetry_client.disconnect()
-        await self._command_client.disconnect()
-
-    def is_connected(self) -> bool:
-        return self._connected
-
-    # ---------------------------------------------------------------- observations
-    def _latest_frame(self) -> TelemetryFrame:
-        frame = self._buffer.snapshot()
-        if not frame:
-            raise DeviceNotConnectedError("Telemetry frame is not yet available")
-        return frame
-
-    def get_observation(self) -> dict:
-        frame = self._latest_frame()
-        age_ms = max(0, utc_now_ms() - frame.received_at_ms)
-        observation = {
-            "ids": list(frame.ids),
-            "angles_deg": list(frame.angles_deg),
-            "velocities_raw": list(frame.velocities_raw),
-            "currents_raw": list(frame.currents_raw),
-            "target_angles_deg": list(frame.target_angles_deg),
-            "metadata": dict(frame.metadata),
-            "timestamp_ms": frame.received_at_ms,
-            "packet_age_ms": age_ms,
-        }
-        return observation
-
-    # ------------------------------------------------------------------ actions
-    def send_action(self, action: Sequence[float]) -> None:
-        if not self._connected:
-            raise DeviceNotConnectedError("Robot is not connected")
-        targets = self._mapper.map_action(action)
-        payload = CommandPayload(
-            ids=self.config.joint_ids,
-            target_angles_deg=targets,
-        )
-        self._run_coro(self._command_client.send_payload(payload))
-
-    async def _handle_telemetry_timeout(self) -> None:
-        """Send a mode:hold command when telemetry silence exceeds the timeout."""
-        if not self._connected:
-            return
-        frame = self._buffer.snapshot()
-        if frame:
-            joint_map = frame.to_joint_dict()
-            targets = [
-                joint_map.get(joint_id, {}).get("angle_deg", 0.0)
-                for joint_id in self.config.joint_ids
-            ]
-        else:
-            targets = [0.0 for _ in self.config.joint_ids]
-        await self._command_client.send_hold(
-            self.config.joint_ids,
-            target_angles_deg=targets,
-            metadata={"reason": "telemetry_timeout"},
-        )
-
-    # ------------------------------------------------------------- no-op helpers
-    def configure(self) -> None:
-        """Configuration is handled entirely through the provided config."""
+    # ------------------------------------------------------------------ #
+    @property
+    def is_calibrated(self) -> bool:
+        return True
 
     def calibrate(self) -> None:
-        """The Ugo Pro MCU performs calibration on boot; nothing to do here."""
+        logger.debug("UgoProFollower does not require explicit calibration at this stage.")
+
+    def configure(self) -> None:
+        ids = self._telemetry_parser.latest_ids or self.config.all_joint_ids
+        if self._command_client:
+            self._command_client.update_ids(ids)
+        for joint_id in ids:
+            self._last_sent_targets.setdefault(joint_id, 0.0)
+
+    # ------------------------------------------------------------------ #
+    def get_observation(self) -> dict[str, Any]:
+        if not self.is_connected:
+            raise DeviceNotConnectedError(f"{self} is not connected.")
+
+        frame = self._joint_buffer.latest()
+        if frame is None:
+            raise DeviceNotConnectedError("No telemetry frame received yet.")
+
+        return self._frame_to_observation(frame)
+
+    def send_action(self, action: dict[str, Any]) -> dict[str, Any]:
+        if not self.is_connected or not self._command_client:
+            raise DeviceNotConnectedError(f"{self} is not connected.")
+
+        frame = self._joint_buffer.latest()
+        current_angles = frame.angles_deg if frame else self._last_sent_targets
+
+        mapped = self._mapper.map(
+            copy.deepcopy(action),
+            current_angles=current_angles,
+            previous_targets=self._last_sent_targets,
+        )
+
+        clipped_targets = self._clip_targets(mapped.targets_deg)
+        timestamp_ms = self._extract_timestamp(action)
+        payload = self._command_client.send_joint_targets(
+            clipped_targets,
+            velocity_raw=mapped.velocity_raw,
+            torque_raw=mapped.torque_raw,
+            mode=mapped.mode,
+            timestamp_ms=timestamp_ms,
+        )
+        self._last_sent_targets = clipped_targets
+        self._record_command(payload, mapped.mode)
+
+        return {"mode": mapped.mode, "joint_targets_deg": clipped_targets}
+
+    # ------------------------------------------------------------------ #
+    def _frame_to_observation(self, frame: TelemetryFrame) -> dict[str, Any]:
+        obs: dict[str, Any] = {}
+        for joint_id in self.config.all_joint_ids:
+            obs[f"joint_{joint_id}.pos_deg"] = frame.angles_deg.get(joint_id, math.nan)
+            if self.config.expose_velocity:
+                obs[f"joint_{joint_id}.vel_raw"] = frame.velocities_raw.get(joint_id, math.nan)
+            if self.config.expose_current:
+                obs[f"joint_{joint_id}.cur_raw"] = frame.currents_raw.get(joint_id, math.nan)
+            if self.config.expose_commanded:
+                obs[f"joint_{joint_id}.target_deg"] = frame.commanded_deg.get(joint_id, math.nan)
+
+        obs["packet_age_ms"] = frame.packet_age_ms
+        obs["vsd_interval_ms"] = frame.vsd_interval_ms or math.nan
+        obs["vsd_read_ms"] = frame.vsd_read_ms or math.nan
+        obs["vsd_write_ms"] = frame.vsd_write_ms or math.nan
+        obs["status.health"] = frame.health
+        obs["status.missing_fields"] = len(frame.missing_fields)
+        obs["cmd_history"] = list(self._cmd_history)
+
+        for name, cam in self.cameras.items():
+            obs[f"camera_{name}"] = cam.async_read()
+        return obs
+
+    def _clip_targets(self, targets: dict[int, float]) -> dict[int, float]:
+        clipped: dict[int, float] = {}
+        for joint_id, value in targets.items():
+            lo, hi = self.config.joint_limit_for(joint_id)
+            clipped[joint_id] = float(min(max(value, lo), hi))
+        return clipped
+
+    def _wait_for_joint_map(self) -> None:
+        ids = self._telemetry_parser.latest_ids
+        if ids:
+            return
+        deadline = now_ms() + self.config.timeout_sec * 1000.0
+        while now_ms() < deadline:
+            ids = self._telemetry_parser.latest_ids
+            if ids:
+                if self._command_client:
+                    self._command_client.update_ids(ids)
+                return
+
+        logger.warning("Timed out waiting for telemetry id ordering; falling back to config order.")
+        if self._command_client:
+            self._command_client.update_ids(self.config.all_joint_ids)
+
+    def _handle_timeout(self, timeout_sec: float) -> None:
+        if not self._command_client:
+            return
+        try:
+            self._command_client.send_joint_targets(
+                self._last_sent_targets,
+                mode="hold",
+                velocity_raw=None,
+                torque_raw=None,
+                timestamp_ms=None,
+            )
+        except Exception:
+            logger.debug("Failed to send hold command during telemetry timeout.", exc_info=True)
+
+    def _record_command(self, payload: str, mode: str) -> None:
+        self._cmd_history.append({"ts_ms": now_ms(), "mode": mode, "payload": payload})
+
+    def _build_telemetry_client(self) -> UgoTelemetryClient:
+        if self._telemetry_client_factory:
+            return self._telemetry_client_factory()
+        return UgoTelemetryClient(
+            host=self.config.telemetry_host,
+            port=self.config.telemetry_port,
+            parser=self._telemetry_parser,
+            timeout_sec=self.config.timeout_sec,
+            interface=self.config.network_interface or self.config.telemetry_host,
+        )
+
+    def _build_command_client(self) -> UgoCommandClient:
+        if self._command_client_factory:
+            return self._command_client_factory()
+        return UgoCommandClient(
+            remote_host=self.config.mcu_host,
+            remote_port=self.config.command_port,
+            local_host=self.config.command_bind_host,
+            local_port=self.config.command_bind_port,
+            rate_hz=self.config.command_rate_hz,
+            default_ids=self.config.all_joint_ids,
+            default_velocity_raw=self.config.velocity_limit_raw,
+            default_torque_raw=self.config.torque_limit_raw,
+        )
+
+    @staticmethod
+    def _extract_timestamp(action: dict[str, Any]) -> float | None:
+        return action.get("teleop.meta.timestamp") or action.get("timestamp_ms")

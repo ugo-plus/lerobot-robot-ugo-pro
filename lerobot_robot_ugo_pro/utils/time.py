@@ -1,10 +1,17 @@
-"""Small helpers around time handling to keep UDP packets in sync."""
+"""Time helpers primarily to ease unit-testing."""
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+import time
 
 
-def utc_now_ms() -> int:
-    """Return the current UTC timestamp in milliseconds."""
-    return int(datetime.now(tz=timezone.utc).timestamp() * 1000)
+def now_ms() -> float:
+    """Return the current wall-clock time in milliseconds."""
+
+    return time.time() * 1000.0
+
+
+def monotonic_ms() -> float:
+    """Return the monotonic clock in milliseconds."""
+
+    return time.monotonic() * 1000.0

@@ -1,53 +1,90 @@
-import asyncio
+from __future__ import annotations
+
+import time
 
 from lerobot_robot_ugo_pro.configs import UgoProConfig
 from lerobot_robot_ugo_pro.robots import UgoProFollower
-from lerobot_robot_ugo_pro.telemetry.frame import TelemetryFrame
+from lerobot_robot_ugo_pro.telemetry import JointStateBuffer, TelemetryFrame, TelemetryParser
 
 
-def _make_frame() -> TelemetryFrame:
-    ids = (11, 12)
-    return TelemetryFrame(
-        ids=ids,
-        angles_deg=(1.0, 2.0),
-        velocities_raw=(0, 0),
-        currents_raw=(0, 0),
-        target_angles_deg=(1.0, 2.0),
-        metadata={},
-        received_at_ms=0,
+class DummyTelemetryClient:
+    def start(self, on_timeout=None):
+        self.on_timeout = on_timeout
+
+    def stop(self):
+        pass
+
+
+class DummyCommandClient:
+    def __init__(self):
+        self.sent: list[dict] = []
+        self.ids: tuple[int, ...] = ()
+
+    def connect(self):
+        pass
+
+    def close(self):
+        pass
+
+    def update_ids(self, ids):
+        self.ids = tuple(ids)
+
+    def send_joint_targets(self, joint_targets_deg, **kwargs):
+        self.sent.append({"targets": dict(joint_targets_deg), "kwargs": kwargs})
+        return "cmd"
+
+
+def _make_robot(config: UgoProConfig) -> tuple[UgoProFollower, JointStateBuffer, DummyCommandClient]:
+    buffer = JointStateBuffer()
+    parser = TelemetryParser(buffer=buffer)
+    parser.latest_ids = config.all_joint_ids
+    command_client = DummyCommandClient()
+    robot = UgoProFollower(
+        config,
+        telemetry_parser=parser,
+        telemetry_client_factory=lambda: DummyTelemetryClient(),
+        command_client_factory=lambda: command_client,
     )
+    robot.connect()
+    return robot, buffer, command_client
 
 
-def test_handle_timeout_sends_hold_with_latest_angles(monkeypatch):
-    robot = UgoProFollower(UgoProConfig())
-    robot._connected = True  # type: ignore[attr-defined]
-    robot._buffer.update(_make_frame())  # type: ignore[attr-defined]
-
-    captured = {}
-
-    async def fake_send_hold(ids, *, target_angles_deg=None, metadata=None):
-        captured["ids"] = tuple(ids)
-        captured["targets"] = tuple(target_angles_deg)
-        captured["metadata"] = metadata
-
-    robot._command_client.send_hold = fake_send_hold  # type: ignore[attr-defined]
-    asyncio.run(robot._handle_telemetry_timeout())  # type: ignore[attr-defined]
-
-    assert captured["ids"] == robot.config.joint_ids
-    assert captured["targets"][: len(_make_frame().angles_deg)] == _make_frame().angles_deg
-    assert captured["metadata"]["reason"] == "telemetry_timeout"
+def _inject_frame(config: UgoProConfig, buffer: JointStateBuffer) -> TelemetryFrame:
+    joint_ids = config.all_joint_ids
+    frame = TelemetryFrame(
+        timestamp=time.time(),
+        joint_ids=joint_ids,
+        angles_deg={jid: float(jid) for jid in joint_ids},
+        velocities_raw={jid: 1.0 for jid in joint_ids},
+        currents_raw={jid: 2.0 for jid in joint_ids},
+        commanded_deg={jid: float(jid) for jid in joint_ids},
+        vsd_interval_ms=10.0,
+        vsd_read_ms=5.0,
+        vsd_write_ms=1.0,
+    )
+    buffer.update(frame)
+    return frame
 
 
-def test_handle_timeout_without_frame_uses_zero_targets():
-    robot = UgoProFollower(UgoProConfig())
-    robot._connected = True  # type: ignore[attr-defined]
+def test_robot_builds_observations(ugo_config: UgoProConfig) -> None:
+    robot, buffer, _ = _make_robot(ugo_config)
+    try:
+        _inject_frame(ugo_config, buffer)
+        obs = robot.get_observation()
+        assert obs["joint_11.pos_deg"] == 11.0
+        assert obs["vsd_interval_ms"] == 10.0
+    finally:
+        robot.disconnect()
 
-    captured = {}
 
-    async def fake_send_hold(ids, *, target_angles_deg=None, metadata=None):
-        captured["targets"] = tuple(target_angles_deg)
-
-    robot._command_client.send_hold = fake_send_hold  # type: ignore[attr-defined]
-    asyncio.run(robot._handle_telemetry_timeout())  # type: ignore[attr-defined]
-
-    assert all(value == 0.0 for value in captured["targets"])
+def test_robot_send_action_calls_command_client(ugo_config: UgoProConfig) -> None:
+    robot, buffer, command_client = _make_robot(ugo_config)
+    try:
+        _inject_frame(ugo_config, buffer)
+        action = {"joint_11.target_deg": 15.0, "mode": "abs"}
+        result = robot.send_action(action)
+        assert command_client.sent
+        assert command_client.sent[-1]["targets"][11] == 15.0
+        assert result["mode"] == "abs"
+    finally:
+        robot.disconnect()

@@ -1,26 +1,33 @@
-from lerobot_robot_ugo_pro.configs import FollowerParameters, UgoProConfig
+from __future__ import annotations
+
+from lerobot_robot_ugo_pro.configs import UgoProConfig
 from lerobot_robot_ugo_pro.follower import UgoFollowerMapper
 
 
-def test_mapper_applies_gain_and_limits():
-    cfg = UgoProConfig(
-        joint_limits_deg={joint_id: (-10.0, 10.0) for joint_id in UgoProConfig().joint_ids},
-        follower=FollowerParameters(mirror_mode=False, follower_gain=0.5),
+def test_mapper_uses_action_map_for_targets() -> None:
+    config = UgoProConfig(action_map={"leader.elbow": 11})
+    mapper = UgoFollowerMapper(config)
+    result = mapper.map(
+        {"leader.elbow": 42.0},
+        current_angles={},
+        previous_targets=config.default_targets_deg(),
     )
-    mapper = UgoFollowerMapper(cfg)
-    action = [20.0 for _ in cfg.joint_ids]
-    targets = mapper.map_action(action)
-    assert all(value == 10.0 for value in targets)
+    assert result.targets_deg[11] == 42.0
 
 
-def test_mapper_mirror_and_role_masks():
-    cfg = UgoProConfig(
-        follower=FollowerParameters(mirror_mode=True, follower_gain=1.0, role="left")
-    )
-    mapper = UgoFollowerMapper(cfg)
-    half = len(cfg.joint_ids) // 2
-    action = list(range(len(cfg.joint_ids)))
-    targets = mapper.map_action(action)
-    # mirror swaps halves but right arm is masked to zero
-    assert targets[:half] == action[half:]
-    assert all(value == 0.0 for value in targets[half:])
+def test_mapper_applies_mirror_mode() -> None:
+    config = UgoProConfig(mirror_mode=True)
+    mapper = UgoFollowerMapper(config)
+    action = {"joint_1.target_deg": 15.0}
+    result = mapper.map(action, current_angles={}, previous_targets=config.default_targets_deg())
+    assert result.targets_deg[11] == -15.0  # mirrored and sign flipped
+    assert result.targets_deg[1] == 15.0
+
+
+def test_mapper_blends_with_current_angles() -> None:
+    config = UgoProConfig(follower_gain=0.5)
+    mapper = UgoFollowerMapper(config)
+    current = {11: 10.0}
+    action = {"joint_11.target_deg": 20.0}
+    result = mapper.map(action, current_angles=current, previous_targets={})
+    assert result.targets_deg[11] == 15.0

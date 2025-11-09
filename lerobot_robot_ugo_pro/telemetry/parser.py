@@ -1,200 +1,186 @@
-"""Streaming parser for the MCU -> PC CSV telemetry feed."""
+"""Streaming parser for the MCU CSV telemetry format."""
 
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass
-from typing import Dict, List, Optional, Sequence, Tuple
+import threading
+import time
+from typing import Sequence
 
-from ..utils import utc_now_ms
 from .frame import TelemetryFrame
 
 
-_MANDATORY_SERIES = ("agl",)
-_OPTIONAL_SERIES = ("vel", "cur", "onj_agl")
+class JointStateBuffer:
+    """Thread-safe holder for the latest telemetry frame."""
 
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._frame: TelemetryFrame | None = None
 
-def _clean_value(raw: str) -> str:
-    return raw.strip()
+    def update(self, frame: TelemetryFrame) -> None:
+        with self._lock:
+            self._frame = frame
 
-
-def _parse_ids(values: Sequence[str]) -> Tuple[int, ...]:
-    ids: List[int] = []
-    for value in values:
-        value = _clean_value(value)
-        if not value:
-            continue
-        try:
-            ids.append(int(float(value)))
-        except ValueError:
-            continue
-    return tuple(ids)
-
-
-def _parse_metadata(values: Sequence[str]) -> Dict[str, str]:
-    metadata: Dict[str, str] = {}
-    for value in values:
-        value = _clean_value(value)
-        if not value:
-            continue
-        if ":" in value:
-            key, raw_val = value.split(":", 1)
-            metadata[key.strip()] = raw_val.strip()
-    return metadata
-
-
-def _parse_numeric_series(
-    ids: Sequence[int],
-    values: Sequence[str],
-    *,
-    transform,
-    default,
-) -> Tuple:
-    data = []
-    for idx in range(len(ids)):
-        if idx < len(values):
-            raw = _clean_value(values[idx])
-            if raw:
-                try:
-                    data.append(transform(raw))
-                    continue
-                except ValueError:
-                    pass
-        data.append(default)
-    return tuple(data)
-
-
-@dataclass
-class _FrameBuilder:
-    ids: Tuple[int, ...] = ()
-    raw_series: Dict[str, Tuple[str, ...]] = None  # type: ignore[assignment]
-    metadata: Dict[str, str] = None  # type: ignore[assignment]
-    last_vsd_ts_ms: int = 0
-
-    def __post_init__(self) -> None:
-        self.raw_series = {}
-        self.metadata = {}
-
-    def reset(self) -> None:
-        self.ids = ()
-        self.raw_series = {}
-        self.metadata = {}
-        self.last_vsd_ts_ms = 0
-
-    def can_build(self) -> bool:
-        return bool(self.ids) and "agl" in self.raw_series and self.last_vsd_ts_ms > 0
-
-    def consume_line(self, line: str) -> Optional[TelemetryFrame]:
-        line = line.strip()
-        if not line:
-            return None
-
-        parts = [segment for segment in line.split(",")]
-        head = parts[0].strip() if parts else ""
-        values = tuple(part.strip() for part in parts[1:])
-
-        if head == "vsd":
-            frame = self.build_if_ready()
-            self.metadata = _parse_metadata(values)
-            self.last_vsd_ts_ms = utc_now_ms()
-            self.raw_series = {}
-            return frame
-
-        if head == "id":
-            ids = _parse_ids(values)
-            if ids:
-                self.ids = ids
-            return None
-
-        if head in _MANDATORY_SERIES or head in _OPTIONAL_SERIES:
-            self.raw_series[head] = values
-        return None
-
-    def build_if_ready(self) -> Optional[TelemetryFrame]:
-        if not self.ids:
-            return None
-        if "agl" not in self.raw_series:
-            return None
-
-        ids = self.ids
-        angles = _parse_numeric_series(
-            ids,
-            self.raw_series.get("agl", ()),
-            transform=lambda raw: float(raw) / 10.0,
-            default=math.nan,
-        )
-        velocities = _parse_numeric_series(
-            ids,
-            self.raw_series.get("vel", ()),
-            transform=lambda raw: int(float(raw)),
-            default=0,
-        )
-        currents = _parse_numeric_series(
-            ids,
-            self.raw_series.get("cur", ()),
-            transform=lambda raw: int(float(raw)),
-            default=0,
-        )
-        targets = _parse_numeric_series(
-            ids,
-            self.raw_series.get("onj_agl", ()),
-            transform=lambda raw: float(raw) / 10.0,
-            default=math.nan,
-        )
-
-        frame = TelemetryFrame(
-            ids=ids,
-            angles_deg=angles,
-            velocities_raw=velocities,
-            currents_raw=currents,
-            target_angles_deg=targets,
-            metadata=dict(self.metadata),
-            received_at_ms=self.last_vsd_ts_ms or utc_now_ms(),
-        )
-
-        self.reset()
-        return frame
+    def latest(self) -> TelemetryFrame | None:
+        with self._lock:
+            return self._frame
 
 
 class TelemetryParser:
-    """Stateful parser that handles arbitrary UDP packet boundaries."""
+    """Parse bytes coming from the UDP socket into :class:`TelemetryFrame` instances."""
 
-    def __init__(self) -> None:
-        self._partial_line = ""
-        self._builder = _FrameBuilder()
+    def __init__(self, *, buffer: JointStateBuffer | None = None):
+        self.buffer = buffer or JointStateBuffer()
+        self.partial_buf = ""
+        self.latest_ids: tuple[int, ...] = ()
+        self._current_lines: dict[str, list[str]] = {}
+        self._raw_lines: list[str] = []
 
-    def feed(self, payload: bytes | str) -> List[TelemetryFrame]:
-        """Consume a UDP payload and return every completed frame."""
-        if isinstance(payload, bytes):
-            text = payload.decode("utf-8", errors="ignore")
-        else:
-            text = payload
+    def feed(self, payload: bytes) -> list[TelemetryFrame]:
+        """Feed new bytes and return zero or more completed frames."""
 
-        text = self._partial_line + text
+        text = payload.decode("utf-8", errors="ignore")
+        text = self.partial_buf + text
         lines = text.splitlines()
         if text and not text.endswith("\n"):
-            self._partial_line = lines.pop()
+            self.partial_buf = lines.pop() if lines else text
         else:
-            self._partial_line = ""
+            self.partial_buf = ""
 
-        frames: List[TelemetryFrame] = []
+        frames: list[TelemetryFrame] = []
         for line in lines:
-            frame = self._builder.consume_line(line)
-            if frame:
-                frames.append(frame)
-
-        if (not self._partial_line) and self._builder.can_build():
-            frame = self._builder.build_if_ready()
+            frame = self._process_line(line.strip())
             if frame:
                 frames.append(frame)
         return frames
 
-    def finalize(self) -> Optional[TelemetryFrame]:
-        """Return the last buffered frame if no new vsd line will arrive."""
-        pending_frame: Optional[TelemetryFrame] = None
-        if self._partial_line:
-            pending_frame = self._builder.consume_line(self._partial_line)
-            self._partial_line = ""
-        frame = pending_frame or self._builder.build_if_ready()
-        self._builder.reset()
+    def flush(self) -> TelemetryFrame | None:
+        """Force completion of the current frame if possible."""
+
+        return self._finalize_frame()
+
+    # ------------------------------------------------------------------ #
+    # Internal helpers
+    # ------------------------------------------------------------------ #
+    def _process_line(self, line: str) -> TelemetryFrame | None:
+        if not line:
+            return None
+        parts = [part.strip() for part in line.split(",")]
+        key = parts[0]
+
+        if key == "vsd":
+            frame = self._finalize_frame()
+            self._current_lines = {"vsd": parts[1:]}
+            self._raw_lines = [line]
+            return frame
+
+        if not self._current_lines:
+            # Ignore until we encounter the next vsd header.
+            return None
+
+        self._current_lines[key] = parts[1:]
+        self._raw_lines.append(line)
+        return None
+
+
+    def _finalize_frame(self) -> TelemetryFrame | None:
+        if not self._current_lines:
+            return None
+
+        lines = self._current_lines
+        self._current_lines = {}
+        raw_lines = tuple(self._raw_lines)
+        self._raw_lines = []
+
+        ids = self._parse_ids(lines.get("id", []))
+        if not ids:
+            return None
+        self.latest_ids = ids
+
+        missing_fields: list[str] = []
+        angles = self._parse_numeric_series(ids, lines.get("agl"), scale=0.1)
+        if not angles:
+            missing_fields.append("agl")
+
+        velocities = self._parse_numeric_series(ids, lines.get("vel"))
+        if not velocities:
+            missing_fields.append("vel")
+
+        currents = self._parse_numeric_series(ids, lines.get("cur"))
+        if not currents:
+            missing_fields.append("cur")
+        commanded = self._parse_numeric_series(ids, lines.get("onj_agl"), scale=0.1)
+        if not commanded:
+            missing_fields.append("onj_agl")
+
+        vsd_interval, vsd_read, vsd_write = self._parse_vsd(lines.get("vsd", []))
+
+        health = "ok"
+        if not angles:
+            health = "missing_agl"
+        elif missing_fields and health == "ok":
+            health = "partial"
+
+        frame = TelemetryFrame(
+            timestamp=time.time(),
+            joint_ids=ids,
+            angles_deg=angles,
+            velocities_raw=velocities,
+            currents_raw=currents,
+            commanded_deg=commanded,
+            vsd_interval_ms=vsd_interval,
+            vsd_read_ms=vsd_read,
+            vsd_write_ms=vsd_write,
+            missing_fields=tuple(missing_fields),
+            raw_lines=raw_lines,
+            health=health,
+        )
+        self.buffer.update(frame)
         return frame
+
+    @staticmethod
+    def _parse_ids(values: Sequence[str] | None) -> tuple[int, ...]:
+        if not values:
+            return ()
+        ids: list[int] = []
+        for value in values:
+            try:
+                ids.append(int(value))
+            except ValueError:
+                continue
+        return tuple(ids)
+
+    @staticmethod
+    def _parse_numeric_series(
+        joint_ids: Sequence[int], values: Sequence[str] | None, *, scale: float = 1.0
+    ) -> dict[int, float]:
+        if not values:
+            return {}
+        series: dict[int, float] = {}
+        for joint_id, raw in zip(joint_ids, values):
+            if raw == "":
+                series[joint_id] = math.nan
+                continue
+            try:
+                series[joint_id] = float(raw) * scale
+            except ValueError:
+                series[joint_id] = math.nan
+        return series
+
+    @staticmethod
+    def _parse_vsd(values: Sequence[str]) -> tuple[float | None, float | None, float | None]:
+        interval = read = write = None
+        for value in values:
+            name, _, remainder = value.partition(":")
+            try:
+                number_str, _, _ = remainder.partition("[")
+                numeric = float(number_str)
+            except ValueError:
+                continue
+            if name == "interval":
+                interval = numeric
+            elif name == "read":
+                read = numeric
+            elif name == "write":
+                write = numeric
+        return interval, read, write

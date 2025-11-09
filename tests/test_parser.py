@@ -1,61 +1,41 @@
-import math
+from __future__ import annotations
 
-from lerobot_robot_ugo_pro.telemetry import TelemetryParser
-
-
-SAMPLE_PACKET = "\n".join(
-    [
-        "vsd,interval:10[ms],read:5[ms],write:1[ms]",
-        "id,11,12,13",
-        "agl,10,20,30",
-        "vel,1,2,3",
-        "cur,4,5,6",
-        "onj_agl,10,20,30",
-        "",
-    ]
-)
+from lerobot_robot_ugo_pro.telemetry import JointStateBuffer, TelemetryParser
 
 
-def test_parser_generates_frame_from_packet():
-    parser = TelemetryParser()
-    frames = parser.feed(SAMPLE_PACKET)
-    assert len(frames) == 1
-    frame = frames[0]
-    assert frame.ids == (11, 12, 13)
-    assert frame.angles_deg == (1.0, 2.0, 3.0)
-    assert frame.velocities_raw == (1, 2, 3)
-    assert frame.currents_raw == (4, 5, 6)
-    assert frame.target_angles_deg == (1.0, 2.0, 3.0)
-    assert frame.metadata["interval"] == "10[ms]"
+def test_parser_decodes_single_packet() -> None:
+    buffer = JointStateBuffer()
+    parser = TelemetryParser(buffer=buffer)
+    payload = (
+        "vsd,interval:10[ms],read:5[ms],write:1[ms]\n"
+        "id,11,12\n"
+        "agl,123,456\n"
+        "vel,1,2\n"
+        "cur,3,4\n"
+        "onj_agl,120,450\n"
+    ).encode()
 
-
-def test_parser_handles_partial_packets():
-    parser = TelemetryParser()
-    head = "vsd,interval:10[ms]\n"
-    body = "id,1\nagl,10\n"
-    frames = parser.feed(head)
-    assert not frames
-    frames = parser.feed(body)
-    assert len(frames) == 1
-    assert frames[0].angles_deg == (1.0,)
-
-
-def test_finalize_flushes_partial_packet():
-    parser = TelemetryParser()
-    parser.feed("vsd,interval:10[ms]\n")
-    parser.feed("id,1\nagl,10")  # no newline at the end → partial line buffered
-    frames = parser.feed("")
-    assert not frames
-    frame = parser.finalize()
+    parser.feed(payload)
+    frame = parser.flush()
     assert frame is not None
-    assert frame.ids == (1,)
+
+    assert frame.angles_deg[11] == 12.3
+    assert frame.velocities_raw[12] == 2
+    assert frame.currents_raw[11] == 3
+    assert frame.commanded_deg[12] == 45.0
+    assert frame.vsd_interval_ms == 10
+    assert buffer.latest() is frame
 
 
-def test_missing_optional_series_are_padded():
-    parser = TelemetryParser()
-    packet = "vsd,interval:10[ms]\nid,1,2\nagl,10,20\n"
-    frames = parser.feed(packet)
-    frame = frames[0]
-    assert frame.currents_raw == (0, 0)
-    assert frame.velocities_raw == (0, 0)
-    assert math.isnan(frame.target_angles_deg[0])
+def test_parser_handles_partial_packets() -> None:
+    parser = TelemetryParser(buffer=JointStateBuffer())
+    part1 = "vsd,interval:10[ms]\nid,1,2\nagl,10,\n".encode()
+    part2 = "vel,,2\nonj_agl,10,20\n".encode()
+
+    parser.feed(part1)
+    parser.feed(part2)
+    frame = parser.flush()
+    assert frame is not None
+    assert frame.angles_deg[1] == 1.0
+    assert frame.angles_deg[2] != frame.angles_deg[2]  # NaN for missing value
+    assert frame.health in {"partial", "missing_agl"}

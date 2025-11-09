@@ -1,19 +1,21 @@
+from __future__ import annotations
+
 import pytest
 
-from lerobot_robot_ugo_pro.configs import UgoProConfig
+from lerobot_robot_ugo_pro.configs import DEFAULT_LEFT_IDS, DEFAULT_RIGHT_IDS, UgoProConfig
 
 
-def test_joint_ids_concat():
-    cfg = UgoProConfig()
-    assert cfg.joint_ids[: len(cfg.left_joint_ids)] == cfg.left_joint_ids
-    assert cfg.joint_ids[len(cfg.left_joint_ids) :] == cfg.right_joint_ids
+def test_config_orders_ids_by_role(ugo_config: UgoProConfig) -> None:
+    assert ugo_config.ordered_joint_ids("left-only") == DEFAULT_LEFT_IDS
+    assert ugo_config.ordered_joint_ids("right-only") == DEFAULT_RIGHT_IDS
+    assert ugo_config.ordered_joint_ids("dual") == DEFAULT_LEFT_IDS + DEFAULT_RIGHT_IDS
 
 
-def test_missing_joint_limits_raise():
+def test_config_validates_ports() -> None:
     with pytest.raises(ValueError):
-        UgoProConfig(
-            joint_limits_deg={
-                joint_id: (-180.0, 180.0)
-                for joint_id in list(range(1, 8))  # right arm only
-            }
-        )
+        UgoProConfig(telemetry_port=70000)  # type: ignore[arg-type]
+
+
+def test_config_detects_duplicate_ids() -> None:
+    with pytest.raises(ValueError):
+        UgoProConfig(left_arm_ids=(1,), right_arm_ids=(1,))

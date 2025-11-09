@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "lerobot-robot-ugo-pro"
 version = "0.1.0"
 description = "LeRobot follower implementation for the Ugo Pro humanoid robot"
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 authors = [
     { name = "ugo" },
 ]
@@ -31,3 +31,9 @@ ugo_pro = "lerobot_robot_ugo_pro.robots.ugo_pro_follower:UgoProFollower"
 
 [tool.setuptools.packages.find]
 exclude = ["tests*"]
+
+[tool.uv.workspace]
+members = ["lerobot-robot-dev", "lerobot-robot-dev-env"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

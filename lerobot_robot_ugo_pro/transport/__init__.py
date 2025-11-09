@@ -1,15 +1,5 @@
-"""UDP transport implementations."""
+"""UDP transport primitives shared by the follower implementation."""
 
-from .udp_client import (
-    CommandPayload,
-    UgoCommandClient,
-    UgoTelemetryClient,
-    UgoUdpClientConfig,
-)
+from .udp_client import RateLimiter, UgoCommandClient, UgoTelemetryClient
 
-__all__ = [
-    "CommandPayload",
-    "UgoCommandClient",
-    "UgoTelemetryClient",
-    "UgoUdpClientConfig",
-]
+__all__ = ["RateLimiter", "UgoCommandClient", "UgoTelemetryClient"]
