@@ -77,10 +77,10 @@ graph LR
 
 ### 2.3 `ugo_arm_monitoring_spec.md`
 
-- MCU → PC の UDP テレメトリは 10 ms 周期で `vsd`, `id`, `agl`, `vel`, `cur`, `onj_agl` 行を CSV で送信。ジョイント ID は左腕（11–17）/右腕（1–7）の順で送られ、角度は 0.1 度単位。
-- PC → MCU のコマンドも CSV で `cmd`/`id`/`tar`/`spd`/`trq`/`sync` を送信し、絶対角モード (`mode:abs`) を基本とする。送信角度は 0.1 度単位の整数。
+- MCU → PC の UDP テレメトリは 10 ms 周期で `vsd`, `id`, `agl`, `vel`, `cur`, `obj` 行を CSV で送信。ジョイント ID は右腕（11–18）→左腕（21–28）の順で送られ、角度は 0.1 度単位。
+- PC → MCU のコマンドも CSV で `tar` を送信し、絶対角を基本とする。送信角度は 0.1 度単位の整数。
 - UDP 通信パラメータは MCU `192.168.4.40:8888`、PC 受信 `192.168.4.10:8886`。双方向通信を保ちつつ 30 ms 以上欠損したら hold に入る推奨運用が定義されている。
-- 以上を `TelemetryParser` と `UgoCommandClient` の仕様源泉とし、フォロワーモードでは 14 自由度分の状態/指令を漏れなく扱う必要がある。
+- 以上を `TelemetryParser` と `UgoCommandClient` の仕様源泉とし、フォロワーモードでは 16 自由度分の状態/指令を漏れなく扱う必要がある。
 
 ```mermaid
 sequenceDiagram
@@ -196,7 +196,7 @@ graph TD
   - `telemetry_host` (default `"0.0.0.0"`), `telemetry_port` (default `8886`)
   - `mcu_host` (`"192.168.4.40"`), `command_port` (`8888`)
   - `network_interface`（UDP bind NIC）、`timeout_sec`（デフォルト 0.3）
-  - `left_arm_ids` / `right_arm_ids`（既定 `[11,12,13,14,15,16,17]` / `[1,2,3,4,5,6,7]`）
+  - `left_arm_ids` / `right_arm_ids`（既定 `[21,22,23,24,25,26,27,28]` / `[11,12,13,14,15,16,17,18]`）
   - `joint_limits_deg`（各 ID の min/max）、`velocity_limit_raw`, `torque_limit_raw`
   - `follower_gain`（leader 追従の混合係数）、`mirror_mode`（左右入れ替え）
   - `cameras: dict[str, CameraConfig]`（必要に応じて RGB, Depth 等）
@@ -390,6 +390,18 @@ flowchart LR
     ObsFeatures --> Telemetry[TelemetryFrame -> Dataset]
     ActFeatures --> Commands[CommandClient -> UDP tar/spd/trq]
 ```
+
+### 5.7 Teleop 実装（`ugo_bilcon`）
+
+Teleope（既存バイラテラルコントローラ）は MCU に直接接続されるため、LeRobot 側では「teleop が必須な CLI でも型が欠けないようにするダミー実装」が必要になる。`lerobot_robot_ugo_pro/teleop` 直下に `UgoBilconConfig` と `UgoBilcon` を追加し、以下の方針で Teleop サーフェスを満たした。
+
+- **Config 登録**: `@TeleoperatorConfig.register_subclass("ugo_bilcon")` を付与し、`--teleop.type=ugo_bilcon` を CLI から渡せるようにした。`joint_ids` の既定値は `UgoProConfig` と同じ左右 14 軸 (`DEFAULT_LEFT_IDS + DEFAULT_RIGHT_IDS`)。`mode` も文字列で受け取り、`bilateral` を標準値とする。
+- **アクションスキーマの整合**: `UgoBilcon.action_features` は `UgoPro.action_features` と完全に一致する辞書（`joint_<id>.target_deg/velocity_raw/torque_raw`, `mode`, `teleop.meta.timestamp`）を返す。これにより `lerobot-record` や `gym_manipulator` が teleop 由来の特徴量を dataset に書き込む際に整合性を保てる。
+- **ダミー動作**: `connect`/`disconnect` は内部フラグを切り替えるだけだが、`DeviceAlreadyConnectedError` と `DeviceNotConnectedError` を投げることで LeRobot の状態機械に追従する。`get_action` はゼロ指令を持つテンプレート辞書を deepcopy し、常に最新時刻の `teleop.meta.timestamp` を埋めて返す。
+- **イベント連携**: `get_teleop_events` は全ての `TeleopEvents` を `False` にした辞書を返却し、`AddTeleopEventsAsInfoStep` や `InterventionActionProcessorStep` が安全に通過する。Teleope 側の介入状態を LeRobot が扱わない構成でも警告が出ない。
+- **キャリブレーション抑止**: `is_calibrated` は常に `True`、`calibrate` は no-op。`Teleoperator` 基底はキャリブレーションディレクトリを作成するが `_save_calibration` を呼ばないため、実際のファイル書き込みは発生せず既存の Teleope フローへ影響しないことを確認済み。
+
+この `ugo_bilcon` Teleop によって、Teleope ハードが MCU に直接ぶら下がる現行構成でも `lerobot-teleoperate`/`lerobot-record` の `teleop` パラメータ要求を正しく満たし、LeRobot 側の処理系に不要なキャリブレーションファイルや副作用を発生させない。
 
 ## 6. フォロワーモード仕様
 

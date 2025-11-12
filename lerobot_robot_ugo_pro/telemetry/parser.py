@@ -109,9 +109,9 @@ class TelemetryParser:
         currents = self._parse_numeric_series(ids, lines.get("cur"))
         if not currents:
             missing_fields.append("cur")
-        commanded = self._parse_numeric_series(ids, lines.get("onj_agl"), scale=0.1)
+        commanded = self._parse_numeric_series(ids, lines.get("obj"), scale=0.1)
         if not commanded:
-            missing_fields.append("onj_agl")
+            missing_fields.append("obj")
 
         vsd_interval, vsd_read, vsd_write = self._parse_vsd(lines.get("vsd", []))
 

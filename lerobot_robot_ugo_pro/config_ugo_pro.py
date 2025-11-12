@@ -8,8 +8,8 @@ from dataclasses import dataclass, field
 from lerobot.cameras.configs import CameraConfig  # type: ignore
 from lerobot.robots.config import RobotConfig  # type: ignore
 
-DEFAULT_LEFT_IDS: tuple[int, ...] = (11, 12, 13, 14, 15, 16, 17)
-DEFAULT_RIGHT_IDS: tuple[int, ...] = (1, 2, 3, 4, 5, 6, 7)
+DEFAULT_LEFT_IDS: tuple[int, ...] = (21, 22, 23, 24, 25, 26, 27, 28)
+DEFAULT_RIGHT_IDS: tuple[int, ...] = (11, 12, 13, 14, 15, 16, 17, 18)
 VALID_FOLLOWER_ROLES = {"dual", "left-only", "right-only"}
 
 

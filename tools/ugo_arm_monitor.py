@@ -70,11 +70,12 @@ def parse_and_update(line: str, state: ServoState):
     """
     1行CSVを解釈して state を更新。
     例:
-      id,11,12,13,...
-      agl,123,456,...
-      vel,0,0,...
-      cur,0,0,...
-      vsd,interval:10[ms],...
+      vsd,,ver:251008, interval:47[ms], read:31[ms], write:13[ms], mode:bilateral(1)
+      id,11,12,13,... //現在接続されているサーボのID, 11-18=RightArm, 21-28=LeftArm
+      agl,123,456,... //各サーボの角度（単位は0.1度）
+      vel,0,0,... //各サーボの速度（単位はサーボ生値）
+      cur,0,0,... //各サーボのトルク（単位はサーボ生値）
+      obj,0,0,... //各サーボの目標角度（単位は0.1度）
     """
     line = line.strip()
     if not line:
@@ -191,5 +192,4 @@ def main():
 
 if __name__ == "__main__":
     main()
-
 

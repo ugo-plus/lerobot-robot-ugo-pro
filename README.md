@@ -38,7 +38,8 @@ The package exposes the `ugo_pro` robot type via the `lerobot.robots` entry-poin
 lerobot-teleoperate \
   --robot.type=ugo_pro \
   --robot.id=my_ugo_pro \
-  --teleop.type=gamepad
+  --teleop.type=ugo_bilcon \
+  --display_data=true
 ```
 
 Important flags:
@@ -80,7 +81,7 @@ finally:
 | --- | --- |
 | `telemetry_host` / `telemetry_port` | UDP bind for incoming MCU telemetry (`8886` by default). |
 | `mcu_host` / `command_port` | MCU IP + port for outbound commands (`192.168.4.40:8888`). |
-| `left_arm_ids` / `right_arm_ids` | Servo ID ordering (defaults to `[11‒17]` for left and `[1‒7]` for right). |
+| `left_arm_ids` / `right_arm_ids` | Servo ID ordering (defaults to `[21-28]` for left and `[11-18]` for right). |
 | `follower_role` | `"dual"`, `"left-only"`, or `"right-only"` to restrict which arm receives targets. |
 | `mirror_mode` | Swap and sign-flip leader actions to mirror across arms. |
 | `follower_gain` | Blend factor (0→hold current pose, 1→direct leader tracking, intermediate blends). |
