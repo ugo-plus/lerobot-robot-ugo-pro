@@ -6,9 +6,9 @@ import time
 from copy import deepcopy
 from typing import Any
 
-from lerobot.teleoperators.teleoperator import Teleoperator
-from lerobot.teleoperators.utils import TeleopEvents
-from lerobot.utils.errors import DeviceAlreadyConnectedError, DeviceNotConnectedError
+from lerobot.teleoperators.teleoperator import Teleoperator # type: ignore
+from lerobot.teleoperators.utils import TeleopEvents # type: ignore
+from lerobot.utils.errors import DeviceAlreadyConnectedError, DeviceNotConnectedError # type: ignore
 
 from .config_ugo_bilcon import UgoBilconConfig
 

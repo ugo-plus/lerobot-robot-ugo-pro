@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Tuple
 
-from lerobot.teleoperators.config import TeleoperatorConfig
+from lerobot.teleoperators.config import TeleoperatorConfig # type: ignore
 
 from ..config_ugo_pro import DEFAULT_LEFT_IDS, DEFAULT_RIGHT_IDS
 
