@@ -227,12 +227,12 @@ classDiagram
 
 ### 5.2 TelemetryParser & JointStateBuffer
 
-- 入力: `bytes` で届く UDP ペイロード。行単位の CSV を解析し、`vsd`, `id`, `agl`, `vel`, `cur`, `onj_agl` を辞書化。
+- 入力: `bytes` で届く UDP ペイロード。行単位の CSV を解析し、`vsd`, `id`, `agl`, `vel`, `cur`, `obj` を辞書化。
 - 仕様準拠:
   - `id` 行受信までは `JointStateBuffer` を初期化しない。
   - 角度は `value / 10.0` で度へ変換し、`joint_map[id].angle_deg` として格納。
   - `vel` と `cur` はそのまま生データで保持するが、`Config.velocity_scale`/`torque_scale` が設定されていれば換算して `Observation` に含める。
-  - `onj_agl` は最新コマンドとの突き合わせに利用する（フィードバック制御や遅延検知）。
+  - `obj` は最新コマンドとの突き合わせに利用する（フィードバック制御や遅延検知）。
   - `TelemetryFrame` には `timestamp`, `packet_age_ms`, `vsd_interval_ms`, `left_arm`, `right_arm`, `raw_lines`, `missing_fields`.
   - 欠損時は `NaN` をセットし `frame.health` に理由を記録。`ugo_arm_monitor.py` の `partial_buf` ロジックを移植して UDP パケット分割にも耐える。
 - `JointStateBuffer` は最新 `TelemetryFrame` を原子的に更新し、`Robot` からは非同期ロックで参照できるようにする。
@@ -246,7 +246,7 @@ flowchart LR
     MapIDs --> ParseAgl[parse agl]
     ParseAgl --> DegConv[convert to degrees]
     DegConv --> Frame[TelemetryFrame]
-    Split --> ParseVel[parse vel/cur/onj_agl]
+    Split --> ParseVel[parse vel/cur/obj]
     ParseVel --> Frame
     Frame --> Buffer[JointStateBuffer.update]
 ```
@@ -283,7 +283,7 @@ sequenceDiagram
 - **Observation features**（未接続時でも計算可能）:
   - `joint_<id>.pos_deg`: `float`（14 主要関節）
   - `joint_<id>.vel_raw` / `joint_<id>.cur_raw`（Config で有効化）
-  - `joint_<id>.target_deg`（`onj_agl` を露出する場合）
+  - `joint_<id>.target_deg`（`obj` を露出する場合）
   - `packet_age_ms`, `vsd_interval_ms`, `vsd_read_ms`, `vsd_write_ms`
   - `status.missing_fields`（`int`）、`status.health`（`str`）
   - カメラ: `(height, width, channels)` タプルを返す（BYOH ガイドのカメラ実装パターン）
@@ -363,7 +363,7 @@ mindmap
 | `joint_<id>.pos_deg` | `float` | `agl` 行を 0.1 度→度に換算（14 関節） |
 | `joint_<id>.vel_raw` | `float` | `vel` 行の生値（`config.expose_velocity=True` のとき） |
 | `joint_<id>.cur_raw` | `float` | `cur` 行。`torque_scale` 指定時は A/Nm へ換算 |
-| `joint_<id>.target_deg` | `float` | `onj_agl` 行。欠損時は `NaN` |
+| `joint_<id>.target_deg` | `float` | `obj` 行。欠損時は `NaN` |
 | `packet_age_ms` | `float` | `TelemetryFrame.timestamp` と現在時刻差分 |
 | `vsd_interval_ms`, `vsd_read_ms`, `vsd_write_ms` | `float` | `vsd` 行のメタ情報 |
 | `status.health` | `str` | `ok` / `stale` / `missing_id` など |

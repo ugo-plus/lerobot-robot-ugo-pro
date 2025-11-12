@@ -29,7 +29,7 @@ class ServoState:
         self.vel: Dict[int, int]   = {}  # 生値
         self.cur: Dict[int, int]   = {}  # 生値
         # その他（必要なら拡張）
-        self.onj_agl: Dict[int, float] = {}
+        self.obj: Dict[int, float] = {}
 
     def set_ids(self, ids: List[int]):
         # 空値初期化はせず、既存値は温存。表示時に存在チェック。
@@ -58,10 +58,10 @@ class ServoState:
                     self.cur[sid] = int(float(v))
                 except ValueError:
                     pass
-        elif name == "onj_agl":
+        elif name == "obj":
             for sid, v in zip(self.ids, values[:len(self.ids)]):
                 try:
-                    self.onj_agl[sid] = float(v) / 10.0
+                    self.obj[sid] = float(v) / 10.0
                 except ValueError:
                     pass
 
@@ -102,7 +102,7 @@ def parse_and_update(line: str, state: ServoState):
                 pass
         if ids:
             state.set_ids(ids)
-    elif key in ("agl", "vel", "cur", "onj_agl"):
+    elif key in ("agl", "vel", "cur", "obj"):
         state._upsert_series(key, values)
     else:
         # 未知キーは無視
@@ -138,7 +138,7 @@ def render(state: ServoState, last_rx_ts: Optional[float]):
         sys.stdout.write(f"{sid:>11d} | {ang:>11.1f} | {vel:>11d} | {cur:>11d}\n")
 
     # 補足（必要なら目標角度）
-    # sys.stdout.write("\n(onj_agl available; hidden by default)\n")
+    # sys.stdout.write("\n(obj available; hidden by default)\n")
     sys.stdout.flush()
 
 # ---- メイン -----------------------------------------------------------------

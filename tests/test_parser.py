@@ -12,7 +12,7 @@ def test_parser_decodes_single_packet() -> None:
         "agl,123,456\n"
         "vel,1,2\n"
         "cur,3,4\n"
-        "onj_agl,120,450\n"
+        "obj,120,450\n"
     ).encode()
 
     parser.feed(payload)
@@ -30,7 +30,7 @@ def test_parser_decodes_single_packet() -> None:
 def test_parser_handles_partial_packets() -> None:
     parser = TelemetryParser(buffer=JointStateBuffer())
     part1 = "vsd,interval:10[ms]\nid,1,2\nagl,10,\n".encode()
-    part2 = "vel,,2\nonj_agl,10,20\n".encode()
+    part2 = "vel,,2\nobj,10,20\n".encode()
 
     parser.feed(part1)
     parser.feed(part2)
