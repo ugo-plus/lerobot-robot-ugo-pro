@@ -35,6 +35,8 @@ class DummyCommandClient:
         self.sent.append({"targets": dict(joint_targets_deg), "kwargs": kwargs})
         return "cmd"
 
+    def send_empty_packet(self) -> None:
+        self.sent.append({})
 
 def _make_robot(config: UgoProConfig) -> tuple[UgoPro, JointStateBuffer, DummyCommandClient]:
     buffer = JointStateBuffer()
@@ -93,6 +95,7 @@ def test_robot_send_action_calls_command_client(ugo_config: UgoProConfig) -> Non
         _inject_frame(ugo_config, buffer)
         action = {"joint_11.target_deg": 15.0, "mode": "abs"}
         result = robot.send_action(action)
+        print(result)
         assert command_client.sent
         assert command_client.sent[-1]["targets"][11] == 15.0
         assert result["mode"] == "abs"

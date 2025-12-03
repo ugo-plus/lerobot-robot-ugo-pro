@@ -57,7 +57,7 @@ class UgoPro(Robot):
         self._mapper = UgoFollowerMapper(config)
         self._last_sent_targets = config.default_targets_deg()
         self._cmd_history: deque[dict[str, Any]] = deque(maxlen=config.command_history_size)
-        self._last_observation: dict[str, Any] | None = {}
+        self._last_observation: dict[str, Any] | None = None
         self._is_connected = False
         self.cameras = make_cameras_from_configs(config.cameras)
 
@@ -197,7 +197,7 @@ class UgoPro(Robot):
         frame = self._joint_buffer.latest()
         current_angles = frame.angles_deg if frame else self._last_sent_targets
 
-        if self._last_observation is not None:
+        if action is None and self._last_observation is not None:
             action = self._last_observation
 
         logger.debug(
