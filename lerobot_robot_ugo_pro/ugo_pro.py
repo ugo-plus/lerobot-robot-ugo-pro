@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import copy
 import logging
+from logging import Formatter, BASIC_FORMAT
 import math
 from collections import deque
 from functools import cached_property
@@ -20,7 +21,10 @@ from .transport import UgoCommandClient, UgoTelemetryClient
 from .utils import now_ms
 
 logger = logging.getLogger(__name__)
-
+handler = logging.StreamHandler()
+handler.setLevel(logging.INFO)
+handler.setFormatter(Formatter(BASIC_FORMAT))
+logger.addHandler(handler)
 
 class UgoPro(Robot):
     """Follower that talks to the ugo Controller MCU via UDP."""
@@ -38,6 +42,12 @@ class UgoPro(Robot):
     ):
         super().__init__(config)
         self.config = config
+        logger.debug(
+            "Initializing UgoPro (id=%s) with %d joints and %d cameras.",
+            config.id,
+            len(config.all_joint_ids),
+            len(config.cameras),
+        )
         self._joint_buffer = telemetry_parser.buffer if telemetry_parser else JointStateBuffer()
         self._telemetry_parser = telemetry_parser or TelemetryParser(buffer=self._joint_buffer)
         self._telemetry_client_factory = telemetry_client_factory
@@ -47,6 +57,7 @@ class UgoPro(Robot):
         self._mapper = UgoFollowerMapper(config)
         self._last_sent_targets = config.default_targets_deg()
         self._cmd_history: deque[dict[str, Any]] = deque(maxlen=config.command_history_size)
+        self._last_observation: dict[str, Any] | None = {}
         self._is_connected = False
         self.cameras = make_cameras_from_configs(config.cameras)
 
@@ -78,8 +89,8 @@ class UgoPro(Robot):
         features: dict[str, Any] = {}
         for joint_id in self.config.all_joint_ids:
             features[f"joint_{joint_id}.target_deg"] = float
-            features[f"joint_{joint_id}.velocity_raw"] = float
-            features[f"joint_{joint_id}.torque_raw"] = float
+            # features[f"joint_{joint_id}.velocity_raw"] = float
+            # features[f"joint_{joint_id}.torque_raw"] = float
         features["mode"] = str
         features["teleop.meta.timestamp"] = float
         return features
@@ -93,23 +104,36 @@ class UgoPro(Robot):
         if self.is_connected:
             raise DeviceAlreadyConnectedError(f"{self} already connected")
 
+        logger.debug(
+            "Connecting UgoPro (id=%s) | calibrate=%s | telemetry=%s:%s | command=%s:%s",
+            self.config.id,
+            calibrate,
+            self.config.telemetry_host,
+            self.config.telemetry_port,
+            self.config.mcu_host,
+            self.config.command_port,
+        )
         self._telemetry_client = self._build_telemetry_client()
-        self._telemetry_client.start(on_timeout=self._handle_timeout)
+        # self._telemetry_client.start(on_timeout=self._handle_timeout)
         self._command_client = self._build_command_client()
         self._command_client.connect()
 
         for cam in self.cameras.values():
             cam.connect()
+            cam_name = getattr(cam, "name", repr(cam))
+            logger.debug("Camera %s connected.", cam_name)
 
         if calibrate:
             self.calibrate()
         self.configure()
         self._is_connected = True
         self._wait_for_joint_map()
+        logger.debug("UgoPro connected and ready.")
 
     def disconnect(self) -> None:
         if not self.is_connected:
             return
+        logger.debug("Disconnecting UgoPro (id=%s).", self.config.id)
         if self._telemetry_client:
             self._telemetry_client.stop()
             self._telemetry_client = None
@@ -122,6 +146,7 @@ class UgoPro(Robot):
             except Exception:
                 logger.debug("Failed to disconnect camera", exc_info=True)
         self._is_connected = False
+        logger.debug("UgoPro disconnected.")
 
     # ------------------------------------------------------------------ #
     @property
@@ -133,6 +158,7 @@ class UgoPro(Robot):
 
     def configure(self) -> None:
         ids = self._telemetry_parser.latest_ids or self.config.all_joint_ids
+        logger.debug("Configuring command client with ids: %s", ids)
         if self._command_client:
             self._command_client.update_ids(ids)
         for joint_id in ids:
@@ -144,8 +170,22 @@ class UgoPro(Robot):
             raise DeviceNotConnectedError(f"{self} is not connected.")
 
         frame = self._joint_buffer.latest()
+        logger.debug("Fetching observation; frame available=%s", frame is not None)
         if frame is None:
-            raise DeviceNotConnectedError("No telemetry frame received yet.")
+            frame = TelemetryFrame(
+                timestamp=now_ms() / 1000.0,
+                joint_ids=self.config.all_joint_ids,
+                angles_deg={jid: math.nan for jid in self.config.all_joint_ids},
+                velocities_raw={jid: math.nan for jid in self.config.all_joint_ids},
+                currents_raw={jid: math.nan for jid in self.config.all_joint_ids},
+                commanded_deg={jid: math.nan for jid in self.config.all_joint_ids},
+                health="missing_all",
+            )
+            # for joint_id in self.config.joint_ids:
+            #     frame[f"joint_{joint_id}.target_deg"] = 0.0
+            #     frame[f"joint_{joint_id}.velocity_raw"] = 0.0
+            #     frame[f"joint_{joint_id}.torque_raw"] = 0.0
+            # raise DeviceNotConnectedError("No telemetry frame received yet.")
 
         return self._frame_to_observation(frame)
 
@@ -156,6 +196,14 @@ class UgoPro(Robot):
         frame = self._joint_buffer.latest()
         current_angles = frame.angles_deg if frame else self._last_sent_targets
 
+        action = self._last_observation if self._last_observation is None else action
+
+        logger.debug(
+            "send_action invoked: mode=%s | fields=%d | current_angles=%s",
+            action.get("mode"),
+            len(action),
+            "present" if frame else "cached",
+        )
         mapped = self._mapper.map(
             copy.deepcopy(action),
             current_angles=current_angles,
@@ -181,10 +229,10 @@ class UgoPro(Robot):
         obs: dict[str, Any] = {}
         for joint_id in self.config.all_joint_ids:
             obs[f"joint_{joint_id}.pos_deg"] = frame.angles_deg.get(joint_id, math.nan)
-            if self.config.expose_velocity:
-                obs[f"joint_{joint_id}.vel_raw"] = frame.velocities_raw.get(joint_id, math.nan)
-            if self.config.expose_current:
-                obs[f"joint_{joint_id}.cur_raw"] = frame.currents_raw.get(joint_id, math.nan)
+            # if self.config.expose_velocity:
+            #     obs[f"joint_{joint_id}.vel_raw"] = frame.velocities_raw.get(joint_id, math.nan)
+            # if self.config.expose_current:
+            #     obs[f"joint_{joint_id}.cur_raw"] = frame.currents_raw.get(joint_id, math.nan)
             if self.config.expose_commanded:
                 obs[f"joint_{joint_id}.target_deg"] = frame.commanded_deg.get(joint_id, math.nan)
 
@@ -198,25 +246,40 @@ class UgoPro(Robot):
 
         for name, cam in self.cameras.items():
             obs[f"camera_{name}"] = cam.async_read()
+
+        # logger.debug("obs : %s", obs)
+        self._last_observation = obs
         return obs
 
     def _clip_targets(self, targets: dict[int, float]) -> dict[int, float]:
         clipped: dict[int, float] = {}
         for joint_id, value in targets.items():
             lo, hi = self.config.joint_limit_for(joint_id)
-            clipped[joint_id] = float(min(max(value, lo), hi))
+            clipped_value = float(min(max(value, lo), hi))
+            if clipped_value != value:
+                logger.debug(
+                    "Target for joint %d clipped from %.2f to %.2f (limits %.2f..%.2f).",
+                    joint_id,
+                    value,
+                    clipped_value,
+                    lo,
+                    hi,
+                )
+            clipped[joint_id] = clipped_value
         return clipped
 
     def _wait_for_joint_map(self) -> None:
         ids = self._telemetry_parser.latest_ids
         if ids:
             return
+        logger.debug("Waiting for telemetry id ordering (timeout %.1fs).", self.config.timeout_sec)
         deadline = now_ms() + self.config.timeout_sec * 1000.0
         while now_ms() < deadline:
             ids = self._telemetry_parser.latest_ids
             if ids:
                 if self._command_client:
                     self._command_client.update_ids(ids)
+                logger.debug("Telemetry id ordering received: %s", ids)
                 return
 
         logger.warning("Timed out waiting for telemetry id ordering; falling back to config order.")
@@ -226,6 +289,7 @@ class UgoPro(Robot):
     def _handle_timeout(self, timeout_sec: float) -> None:
         if not self._command_client:
             return
+        logger.debug("Telemetry timeout detected (%.2fs). Sending hold command.", timeout_sec)
         try:
             self._command_client.send_joint_targets(
                 self._last_sent_targets,
@@ -243,6 +307,13 @@ class UgoPro(Robot):
     def _build_telemetry_client(self) -> UgoTelemetryClient:
         if self._telemetry_client_factory:
             return self._telemetry_client_factory()
+        logger.debug(
+            "Creating telemetry client host=%s port=%s interface=%s timeout=%.2fs",
+            self.config.telemetry_host,
+            self.config.telemetry_port,
+            self.config.network_interface or self.config.telemetry_host,
+            self.config.timeout_sec,
+        )
         return UgoTelemetryClient(
             host=self.config.telemetry_host,
             port=self.config.telemetry_port,
@@ -254,6 +325,14 @@ class UgoPro(Robot):
     def _build_command_client(self) -> UgoCommandClient:
         if self._command_client_factory:
             return self._command_client_factory()
+        logger.debug(
+            "Creating command client remote=%s:%s local=%s:%s rate=%.1fHz",
+            self.config.mcu_host,
+            self.config.command_port,
+            self.config.command_bind_host,
+            self.config.command_bind_port,
+            self.config.command_rate_hz,
+        )
         return UgoCommandClient(
             remote_host=self.config.mcu_host,
             remote_port=self.config.command_port,

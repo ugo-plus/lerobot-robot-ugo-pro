@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from logging import Formatter, BASIC_FORMAT
 import math
 import socket
 import threading
@@ -12,6 +13,10 @@ from typing import Callable, Mapping, Sequence
 from ..telemetry.parser import TelemetryParser
 
 logger = logging.getLogger(__name__)
+handler = logging.StreamHandler()
+handler.setLevel(logging.INFO)
+handler.setFormatter(Formatter(BASIC_FORMAT))
+logger.addHandler(handler)
 
 
 class RateLimiter:
@@ -102,6 +107,7 @@ class UgoTelemetryClient:
                 break
             self._last_rx = time.monotonic()
             frames = self.parser.feed(data)
+            logger.debug("Received UDP telemetry packet (%d bytes)", len(data))
             if not frames:
                 self.parser.flush()
 
@@ -177,6 +183,8 @@ class UgoCommandClient:
             timestamp_ms=timestamp_ms,
         )
         self.rate_limiter.wait()
+        # debug payload
+        logger.debug("Sending UDP command payload:\n\t%s", payload)
         self._sock.sendto(payload.encode("utf-8"), (self.remote_host, self.remote_port))
         self.last_payload = payload
         return payload
@@ -215,19 +223,20 @@ class UgoCommandClient:
             interval_ms = int(round(self.rate_limiter.period * 1000.0))
 
         lines = [
-            f"cmd,interval:{interval_ms}[ms],write:1[ms],mode:{mode}",
-            "id," + ",".join(str(joint_id) for joint_id in ids),
-            "tar," + ",".join(ordered_targets),
+            # f"cmd,interval:{interval_ms}[ms],write:1[ms],mode:{mode}",
+            # "id," + ",".join(str(joint_id) for joint_id in ids),
+            # "tar," + ",".join(ordered_targets),
+            ",".join(ordered_targets),
         ]
 
-        if any(entry for entry in ordered_velocities):
-            lines.append("spd," + ",".join(ordered_velocities))
-        if any(entry for entry in ordered_torques):
-            lines.append("trq," + ",".join(ordered_torques))
+        # if any(entry for entry in ordered_velocities):
+        #     lines.append("spd," + ",".join(ordered_velocities))
+        # if any(entry for entry in ordered_torques):
+        #     lines.append("trq," + ",".join(ordered_torques))
 
-        if timestamp_ms is not None:
-            self._sync_counter += 1
-            lines.append(f"sync,{int(timestamp_ms)},{self._sync_counter}")
+        # if timestamp_ms is not None:
+        #     self._sync_counter += 1
+        #     lines.append(f"sync,{int(timestamp_ms)},{self._sync_counter}")
 
         for joint_id, value in zip(ids, ordered_targets):
             if value:

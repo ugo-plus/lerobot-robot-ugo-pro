@@ -58,7 +58,7 @@ class UgoProConfig(RobotConfig):
 
     @property
     def all_joint_ids(self) -> tuple[int, ...]:
-        return self.left_arm_ids + self.right_arm_ids
+        return self.right_arm_ids + self.left_arm_ids # order: right then left
 
     def ordered_joint_ids(self, role: str | None = None) -> tuple[int, ...]:
         """Return the joint ordering for the configured follower role."""

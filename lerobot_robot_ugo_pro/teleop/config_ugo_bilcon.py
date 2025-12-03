@@ -21,3 +21,7 @@ class UgoBilconConfig(TeleoperatorConfig):
 
     joint_ids: tuple[int, ...] = field(default_factory=_default_joint_ids)
     mode: str = "bilateral"
+    telemetry_host: str = "0.0.0.0"
+    telemetry_port: int = 8886
+    timeout_sec: float = 0.3
+    network_interface: str | None = None
