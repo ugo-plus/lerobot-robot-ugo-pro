@@ -39,6 +39,7 @@ lerobot-teleoperate \
   --robot.type=ugo_pro \
   --robot.id=my_ugo_pro \
   --teleop.type=ugo_bilcon \
+  --teleop.id=my_ugo_bilcon \
   --display_data=true
 ```
 
@@ -46,6 +47,66 @@ Important flags:
 
 - `--robot.id` ties into LeRobot’s calibration directory; pick a stable identifier per rig.
 - Additional robot kwargs (e.g. `--robot.telemetry_host=0.0.0.0`) can be passed to override config fields described below.
+
+### Recording
+
+```bash
+lerobot-record \
+  --robot.type=ugo_pro \
+  --robot.id=my_ugo_pro \
+  --robot.cameras="{ front: {type:opencv, index_or_path:2, width:1920, height:1080, fps:15}, left: {type:opencv, index_or_path:1, width:1920, height:1080, fps:15}, right: {type:opencv, index_or_path:0, width:1920, height:1080, fps:15}}" \
+  --teleop.type=ugo_bilcon \
+  --teleop.id=my_ugo_bilcon \
+  --display_data=true \
+  --dataset.push_to_hub=false \
+  --dataset.repo_id=username/my_record_test \
+  --dataset.num_episodes=2 \
+  --dataset.single_task="Grab the black cube"
+```
+
+### Visualize
+
+```bash
+lerobot-dataset-viz \
+  --repo-id username/my_record_test \
+  --episode-index 0
+```
+
+```bash
+lerobot-find-cameras
+
+--robot.cameras="{ front: {type: opencv, index_or_path: 2, width: 1920, height: 1080, fps: 15}, left: {type: opencv, index_or_path: 1, width: 1920, height: 1080, fps: 15}, right: {type: opencv, index_or_path: 0, width: 1920, height: 1080, fps: 15}}" \
+```
+
+### Replay
+
+```bash
+lerobot-replay \
+  --robot.type=ugo_pro \
+  --robot.id=my_ugo_pro \
+  --dataset.repo_id=username/my_record_test \
+  --dataset.episode=0
+```
+
+### Data visualize
+
+```bash
+lerobot-dataset-viz \
+  --repo-id=username/my_record_test \
+  --episode-index=0
+```
+
+### Policy Training
+
+```bash
+lerobot-train \
+  --dataset.repo_id=${HF_USER}/record-test \
+  --policy.type=act \
+  --output_dir=outputs/train/policy-test \
+  --job_name=policy-test \
+  --policy.device=cuda \
+  --policy.repo_id=${HF_USER}/policy-test
+```
 
 ### Python API
 
