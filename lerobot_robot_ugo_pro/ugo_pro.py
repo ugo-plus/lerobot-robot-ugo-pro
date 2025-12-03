@@ -197,7 +197,8 @@ class UgoPro(Robot):
         frame = self._joint_buffer.latest()
         current_angles = frame.angles_deg if frame else self._last_sent_targets
 
-        action = self._last_observation if self._last_observation is None else action
+        if self._last_observation is not None:
+            action = self._last_observation
 
         logger.debug(
             "send_action invoked: mode=%s | fields=%d | current_angles=%s",
