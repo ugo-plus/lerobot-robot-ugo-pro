@@ -224,12 +224,12 @@ class UgoCommandClient:
         if not torques and self._default_torque_raw is not None:
             torques = {joint_id: self._default_torque_raw for joint_id in ids}
 
-        ordered_velocities = self._ordered_values(ids, velocities)
-        ordered_torques = self._ordered_values(ids, torques)
+        # ordered_velocities = self._ordered_values(ids, velocities)
+        # ordered_torques = self._ordered_values(ids, torques)
 
-        interval_ms = 0
-        if self.rate_limiter.period > 0:
-            interval_ms = int(round(self.rate_limiter.period * 1000.0))
+        # interval_ms = 0
+        # if self.rate_limiter.period > 0:
+        #     interval_ms = int(round(self.rate_limiter.period * 1000.0))
 
         lines = [
             # f"cmd,interval:{interval_ms}[ms],write:1[ms],mode:{mode}",
