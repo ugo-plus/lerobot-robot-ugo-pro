@@ -189,6 +189,15 @@ class UgoCommandClient:
         self.last_payload = payload
         return payload
 
+    def send_empty_packet(self) -> None:
+        """Send an empty UDP packet to the configured remote."""
+        if not self._sock:
+            self.connect()
+        assert self._sock is not None
+
+        self.rate_limiter.wait()
+        self._sock.sendto(b"", (self.remote_host, self.remote_port))
+
     def build_payload(
         self,
         joint_targets_deg: Mapping[int, float],

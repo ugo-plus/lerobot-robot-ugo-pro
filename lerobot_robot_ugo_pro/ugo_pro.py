@@ -117,6 +117,7 @@ class UgoPro(Robot):
         # self._telemetry_client.start(on_timeout=self._handle_timeout)
         self._command_client = self._build_command_client()
         self._command_client.connect()
+        self._command_client.send_empty_packet()
 
         for cam in self.cameras.values():
             cam.connect()
