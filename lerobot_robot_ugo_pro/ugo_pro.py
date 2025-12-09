@@ -231,10 +231,10 @@ class UgoPro(Robot):
         obs: dict[str, Any] = {}
         for joint_id in self.config.all_joint_ids:
             obs[f"joint_{joint_id}.pos_deg"] = frame.angles_deg.get(joint_id, math.nan)
-            # if self.config.expose_velocity:
-            #     obs[f"joint_{joint_id}.vel_raw"] = frame.velocities_raw.get(joint_id, math.nan)
-            # if self.config.expose_current:
-            #     obs[f"joint_{joint_id}.cur_raw"] = frame.currents_raw.get(joint_id, math.nan)
+            if self.config.expose_velocity:
+                obs[f"joint_{joint_id}.vel_raw"] = frame.velocities_raw.get(joint_id, math.nan)
+            if self.config.expose_current:
+                obs[f"joint_{joint_id}.cur_raw"] = frame.currents_raw.get(joint_id, math.nan)
             if self.config.expose_commanded:
                 obs[f"joint_{joint_id}.target_deg"] = frame.commanded_deg.get(joint_id, math.nan)
 
