@@ -65,21 +65,10 @@ class UgoPro(Robot):
     @cached_property
     def observation_features(self) -> dict[str, Any]:
         features: dict[str, Any] = {}
+        # observation.state should mirror the action ordering: right arm IDs then left,
+        # and contain only joint target angles [deg].
         for joint_id in self.config.all_joint_ids:
-            features[f"joint_{joint_id}.pos_deg"] = float
-            if self.config.expose_velocity:
-                features[f"joint_{joint_id}.vel_raw"] = float
-            if self.config.expose_current:
-                features[f"joint_{joint_id}.cur_raw"] = float
-            if self.config.expose_commanded:
-                features[f"joint_{joint_id}.target_deg"] = float
-        features["packet_age_ms"] = float
-        features["vsd_interval_ms"] = float
-        features["vsd_read_ms"] = float
-        features["vsd_write_ms"] = float
-        features["status.health"] = str
-        features["status.missing_fields"] = int
-        features["cmd_history"] = list
+            features[f"joint_{joint_id}.target_deg"] = float
         for name, cam_cfg in self.config.cameras.items():
             features[f"camera_{name}"] = (cam_cfg.height, cam_cfg.width, 3)
         return features
@@ -92,7 +81,6 @@ class UgoPro(Robot):
             # features[f"joint_{joint_id}.velocity_raw"] = float
             # features[f"joint_{joint_id}.torque_raw"] = float
         features["mode"] = str
-        features["teleop.meta.timestamp"] = float
         return features
 
     # ------------------------------------------------------------------ #
@@ -114,7 +102,8 @@ class UgoPro(Robot):
             self.config.command_port,
         )
         self._telemetry_client = self._build_telemetry_client()
-        # self._telemetry_client.start(on_timeout=self._handle_timeout)
+        if self._telemetry_client:
+            self._telemetry_client.start(on_timeout=self._handle_timeout)
         self._command_client = self._build_command_client()
         self._command_client.connect()
         self._command_client.send_empty_packet()

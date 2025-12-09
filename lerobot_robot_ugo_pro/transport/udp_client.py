@@ -44,7 +44,16 @@ class RateLimiter:
 
 
 class UgoTelemetryClient:
-    """Lightweight UDP listener that pushes packets into a :class:`TelemetryParser`."""
+    """Lightweight UDP listener that pushes packets into a :class:`TelemetryParser`.
+
+    Multiple instances that target the same (interface, port) share one underlying
+    socket/thread to avoid binding conflicts. Each instance registers its parser
+    (and optional timeout callback) with the shared receiver.
+    """
+
+    # key: (interface, port) -> _SharedReceiver
+    _shared_receivers: dict[tuple[str, int], "_SharedReceiver"] = {}
+    _registry_lock = threading.Lock()
 
     def __init__(
         self,
@@ -60,37 +69,96 @@ class UgoTelemetryClient:
         self.parser = parser
         self.timeout_sec = timeout_sec
         self.interface = interface or host
+        self._receiver: _SharedReceiver | None = None
+        self._subscription_id: int | None = None
+
+    def start(self, on_timeout: Callable[[float], None] | None = None) -> None:
+        if self._subscription_id is not None:
+            return
+
+        with self._registry_lock:
+            receiver = self._shared_receivers.get((self.interface, self.port))
+            if receiver is None:
+                receiver = _SharedReceiver(
+                    interface=self.interface, port=self.port, timeout_sec=self.timeout_sec
+                )
+                self._shared_receivers[(self.interface, self.port)] = receiver
+                logger.info("Telemetry listener bound on %s:%s", self.interface, self.port)
+            else:
+                logger.info(
+                    "Reusing telemetry listener on %s:%s for an additional subscriber.",
+                    self.interface,
+                    self.port,
+                )
+
+        self._receiver = receiver
+        self._subscription_id = receiver.subscribe(self.parser, on_timeout)
+
+    def stop(self) -> None:
+        if self._receiver and self._subscription_id is not None:
+            should_cleanup = self._receiver.unsubscribe(self._subscription_id)
+            self._subscription_id = None
+            if should_cleanup:
+                with self._registry_lock:
+                    self._shared_receivers.pop((self.interface, self.port), None)
+        self._receiver = None
+
+
+class _SharedReceiver:
+    """Owns a socket and fans out received packets to subscribers."""
+
+    def __init__(self, *, interface: str, port: int, timeout_sec: float):
+        self.interface = interface
+        self.port = port
+        self.timeout_sec = timeout_sec
         self._sock: socket.socket | None = None
         self._thread: threading.Thread | None = None
         self._stop = threading.Event()
         self._last_rx = time.monotonic()
-        self._on_timeout: Callable[[float], None] | None = None
+        self._subscribers: dict[int, tuple[TelemetryParser, Callable[[float], None] | None]] = {}
+        self._sub_lock = threading.Lock()
+        self._next_id = 0
+        self._start_thread()
 
-    def start(self, on_timeout: Callable[[float], None] | None = None) -> None:
-        if self._thread and self._thread.is_alive():
-            return
-        self._on_timeout = on_timeout
+    def _start_thread(self) -> None:
         sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        try:
+            sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
+        except (AttributeError, OSError):
+            # SO_REUSEPORT not available everywhere; ignore.
+            pass
         sock.bind((self.interface, self.port))
         sock.settimeout(0.05)
         self._sock = sock
         self._stop.clear()
         self._thread = threading.Thread(target=self._run, daemon=True)
         self._thread.start()
-        logger.info("Telemetry listener bound on %s:%s", self.interface, self.port)
 
-    def stop(self) -> None:
-        self._stop.set()
-        if self._sock:
-            try:
-                self._sock.close()
-            except OSError:
-                pass
-            self._sock = None
-        if self._thread:
-            self._thread.join(timeout=1.0)
-            self._thread = None
+    def subscribe(self, parser: TelemetryParser, on_timeout: Callable[[float], None] | None) -> int:
+        with self._sub_lock:
+            sub_id = self._next_id
+            self._next_id += 1
+            self._subscribers[sub_id] = (parser, on_timeout)
+        return sub_id
+
+    def unsubscribe(self, sub_id: int) -> bool:
+        with self._sub_lock:
+            self._subscribers.pop(sub_id, None)
+            has_subscribers = bool(self._subscribers)
+        if not has_subscribers:
+            self._stop.set()
+            if self._sock:
+                try:
+                    self._sock.close()
+                except OSError:
+                    pass
+                self._sock = None
+            if self._thread:
+                self._thread.join(timeout=1.0)
+                self._thread = None
+            return True
+        return False
 
     # ------------------------------------------------------------------ #
     def _run(self) -> None:
@@ -100,16 +168,20 @@ class UgoTelemetryClient:
                 data, _ = self._sock.recvfrom(65535)
             except socket.timeout:
                 if time.monotonic() - self._last_rx > self.timeout_sec:
-                    if self._on_timeout:
-                        self._on_timeout(self.timeout_sec)
+                    for _, callback in list(self._subscribers.values()):
+                        if callback:
+                            callback(self.timeout_sec)
                 continue
             except OSError:
                 break
+
             self._last_rx = time.monotonic()
-            frames = self.parser.feed(data)
-            logger.debug("Received UDP telemetry packet (%d bytes)", len(data))
-            if not frames:
-                self.parser.flush()
+            subscribers_snapshot = list(self._subscribers.values())
+            for parser, _ in subscribers_snapshot:
+                frames = parser.feed(data)
+                logger.debug("Received UDP telemetry packet (%d bytes)", len(data))
+                if not frames:
+                    parser.flush()
 
 
 class UgoCommandClient:
