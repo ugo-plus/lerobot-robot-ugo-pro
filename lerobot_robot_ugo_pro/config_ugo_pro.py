@@ -36,7 +36,9 @@ class UgoProConfig(RobotConfig):
     command_rate_hz: float = 100.0
     left_arm_ids: tuple[int, ...] = DEFAULT_LEFT_IDS
     right_arm_ids: tuple[int, ...] = DEFAULT_RIGHT_IDS
-    joint_limits_deg: dict[int, tuple[float, float]] = field(default_factory=_default_joint_limits)
+    joint_limits_deg: dict[int, tuple[float, float]] = field(
+        default_factory=_default_joint_limits
+    )
     velocity_limit_raw: int | None = 512
     torque_limit_raw: int | None = 1023
     follower_gain: float = 1.0
@@ -58,7 +60,7 @@ class UgoProConfig(RobotConfig):
 
     @property
     def all_joint_ids(self) -> tuple[int, ...]:
-        return self.right_arm_ids + self.left_arm_ids # order: right then left
+        return self.right_arm_ids + self.left_arm_ids  # order: right then left
 
     def ordered_joint_ids(self, role: str | None = None) -> tuple[int, ...]:
         """Return the joint ordering for the configured follower role."""
@@ -102,7 +104,9 @@ class UgoProConfig(RobotConfig):
             raise ValueError("left_arm_ids and right_arm_ids cannot be empty")
         duplicates = set(self.left_arm_ids).intersection(self.right_arm_ids)
         if duplicates:
-            raise ValueError(f"Joint IDs must be unique across arms: {sorted(duplicates)}")
+            raise ValueError(
+                f"Joint IDs must be unique across arms: {sorted(duplicates)}"
+            )
 
     def _validate_joint_limits(self) -> None:
         for joint_id in self.all_joint_ids:
@@ -110,10 +114,14 @@ class UgoProConfig(RobotConfig):
                 raise ValueError(f"joint_limits_deg missing entry for joint {joint_id}")
             limit = self.joint_limits_deg[joint_id]
             if len(limit) != 2:
-                raise ValueError(f"joint_limits_deg for joint {joint_id} must be a pair")
+                raise ValueError(
+                    f"joint_limits_deg for joint {joint_id} must be a pair"
+                )
             lo, hi = limit
             if lo >= hi:
-                raise ValueError(f"Invalid joint limit for joint {joint_id}: min {lo} >= max {hi}")
+                raise ValueError(
+                    f"Invalid joint limit for joint {joint_id}: min {lo} >= max {hi}"
+                )
 
     def _validate_action_map(self) -> None:
         for key, joint_id in self.action_map.items():

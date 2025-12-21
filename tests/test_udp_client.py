@@ -22,8 +22,11 @@ def test_command_client_builds_payload_with_defaults() -> None:
     lines = payload.splitlines()
     assert lines[0] == "10,-10"
 
+
 def test_command_client_uses_previous_targets_when_missing() -> None:
-    client = UgoCommandClient(remote_host="127.0.0.1", remote_port=9999, default_ids=(11, 12))
+    client = UgoCommandClient(
+        remote_host="127.0.0.1", remote_port=9999, default_ids=(11, 12)
+    )
     client.build_payload(
         {11: 2.0, 12: 3.0},
         velocity_raw=None,

@@ -13,11 +13,13 @@ ugo アームモニター（MCU側）→ PC のUDP送信を受け、
 
 資料の通信仕様（固定IP、ポート、CSVの行形式など）に準拠。
 """
+
 import argparse
 import socket
 import sys
 import time
 from typing import Dict, List, Optional
+
 
 # ---- データ保持用 -----------------------------------------------------------
 class ServoState:
@@ -26,8 +28,8 @@ class ServoState:
         self.ids: List[int] = []
         # 各系列の最新値（id -> 値）
         self.agl: Dict[int, float] = {}  # 0.1度単位 → 表示は度に換算
-        self.vel: Dict[int, int]   = {}  # 生値
-        self.cur: Dict[int, int]   = {}  # 生値
+        self.vel: Dict[int, int] = {}  # 生値
+        self.cur: Dict[int, int] = {}  # 生値
         # その他（必要なら拡張）
         self.obj: Dict[int, float] = {}
 
@@ -40,30 +42,31 @@ class ServoState:
         if not self.ids or len(values) < len(self.ids):
             return
         if name == "agl":
-            for sid, v in zip(self.ids, values[:len(self.ids)]):
+            for sid, v in zip(self.ids, values[: len(self.ids)]):
                 try:
                     # 0.1度単位 → 度
                     self.agl[sid] = float(v) / 10.0
                 except ValueError:
                     pass
         elif name == "vel":
-            for sid, v in zip(self.ids, values[:len(self.ids)]):
+            for sid, v in zip(self.ids, values[: len(self.ids)]):
                 try:
                     self.vel[sid] = int(float(v))
                 except ValueError:
                     pass
         elif name == "cur":
-            for sid, v in zip(self.ids, values[:len(self.ids)]):
+            for sid, v in zip(self.ids, values[: len(self.ids)]):
                 try:
                     self.cur[sid] = int(float(v))
                 except ValueError:
                     pass
         elif name == "obj":
-            for sid, v in zip(self.ids, values[:len(self.ids)]):
+            for sid, v in zip(self.ids, values[: len(self.ids)]):
                 try:
                     self.obj[sid] = float(v) / 10.0
                 except ValueError:
                     pass
+
 
 # ---- パーサ -----------------------------------------------------------------
 def parse_and_update(line: str, state: ServoState):
@@ -108,6 +111,7 @@ def parse_and_update(line: str, state: ServoState):
         # 未知キーは無視
         pass
 
+
 # ---- レンダラ ---------------------------------------------------------------
 def render(state: ServoState, last_rx_ts: Optional[float]):
     """
@@ -117,7 +121,9 @@ def render(state: ServoState, last_rx_ts: Optional[float]):
     sys.stdout.write("\x1b[2J\x1b[H")
     sys.stdout.write("ugo arm UDP Monitor |  Ctrl+C to exit\n")
     if last_rx_ts:
-        sys.stdout.write(f"Last packet: {time.strftime('%Y-%m-%d %H:%M:%S')}  (age: {time.time()-last_rx_ts:.2f}s)\n")
+        sys.stdout.write(
+            f"Last packet: {time.strftime('%Y-%m-%d %H:%M:%S')}  (age: {time.time() - last_rx_ts:.2f}s)\n"
+        )
     else:
         sys.stdout.write("Last packet: (waiting...)\n")
 
@@ -129,7 +135,7 @@ def render(state: ServoState, last_rx_ts: Optional[float]):
     # ヘッダ
     header = ["ID", "Angle[deg]", "Vel(raw)", "Torque(raw)"]
     sys.stdout.write("\n" + " | ".join(f"{h:>11}" for h in header) + "\n")
-    sys.stdout.write("-" * (11*len(header) + 3*(len(header)-1)) + "\n")
+    sys.stdout.write("-" * (11 * len(header) + 3 * (len(header) - 1)) + "\n")
 
     for sid in state.ids:
         ang = state.agl.get(sid, float("nan"))
@@ -141,12 +147,20 @@ def render(state: ServoState, last_rx_ts: Optional[float]):
     # sys.stdout.write("\n(obj available; hidden by default)\n")
     sys.stdout.flush()
 
+
 # ---- メイン -----------------------------------------------------------------
 def main():
     ap = argparse.ArgumentParser(description="V-Sido UDP listener (PC side)")
     ap.add_argument("--host", default="0.0.0.0", help="bind host (default: 0.0.0.0)")
-    ap.add_argument("--port", type=int, default=8886, help="bind UDP port (default: 8886)")
-    ap.add_argument("--fps", type=float, default=20.0, help="display refresh rate in Hz (default: 20)")
+    ap.add_argument(
+        "--port", type=int, default=8886, help="bind UDP port (default: 8886)"
+    )
+    ap.add_argument(
+        "--fps",
+        type=float,
+        default=20.0,
+        help="display refresh rate in Hz (default: 20)",
+    )
     args = ap.parse_args()
 
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -190,6 +204,6 @@ def main():
     except KeyboardInterrupt:
         print("\nbye.")
 
+
 if __name__ == "__main__":
     main()
-

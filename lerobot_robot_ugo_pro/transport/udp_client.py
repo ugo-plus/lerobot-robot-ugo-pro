@@ -80,10 +80,14 @@ class UgoTelemetryClient:
             receiver = self._shared_receivers.get((self.interface, self.port))
             if receiver is None:
                 receiver = _SharedReceiver(
-                    interface=self.interface, port=self.port, timeout_sec=self.timeout_sec
+                    interface=self.interface,
+                    port=self.port,
+                    timeout_sec=self.timeout_sec,
                 )
                 self._shared_receivers[(self.interface, self.port)] = receiver
-                logger.info("Telemetry listener bound on %s:%s", self.interface, self.port)
+                logger.info(
+                    "Telemetry listener bound on %s:%s", self.interface, self.port
+                )
             else:
                 logger.info(
                     "Reusing telemetry listener on %s:%s for an additional subscriber.",
@@ -115,7 +119,9 @@ class _SharedReceiver:
         self._thread: threading.Thread | None = None
         self._stop = threading.Event()
         self._last_rx = time.monotonic()
-        self._subscribers: dict[int, tuple[TelemetryParser, Callable[[float], None] | None]] = {}
+        self._subscribers: dict[
+            int, tuple[TelemetryParser, Callable[[float], None] | None]
+        ] = {}
         self._sub_lock = threading.Lock()
         self._next_id = 0
         self._start_thread()
@@ -135,7 +141,9 @@ class _SharedReceiver:
         self._thread = threading.Thread(target=self._run, daemon=True)
         self._thread.start()
 
-    def subscribe(self, parser: TelemetryParser, on_timeout: Callable[[float], None] | None) -> int:
+    def subscribe(
+        self, parser: TelemetryParser, on_timeout: Callable[[float], None] | None
+    ) -> int:
         with self._sub_lock:
             sub_id = self._next_id
             self._next_id += 1
@@ -205,7 +213,9 @@ class UgoCommandClient:
         self.local_port = local_port
         self.rate_limiter = RateLimiter(rate_hz=rate_hz)
         self._ids: tuple[int, ...] = tuple(default_ids or ())
-        self._last_targets_deg: dict[int, float] = {joint_id: 0.0 for joint_id in self._ids}
+        self._last_targets_deg: dict[int, float] = {
+            joint_id: 0.0 for joint_id in self._ids
+        }
         self._sock: socket.socket | None = None
         self._default_velocity_raw = default_velocity_raw
         self._default_torque_raw = default_torque_raw

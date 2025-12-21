@@ -4,7 +4,11 @@ import time
 
 from typing import cast
 
-from lerobot_robot_ugo_pro.telemetry import JointStateBuffer, TelemetryFrame, TelemetryParser
+from lerobot_robot_ugo_pro.telemetry import (
+    JointStateBuffer,
+    TelemetryFrame,
+    TelemetryParser,
+)
 from lerobot_robot_ugo_pro.teleop.config_ugo_bilcon import UgoBilconConfig
 from lerobot_robot_ugo_pro.teleop.ugo_bilcon import UgoBilcon
 from lerobot_robot_ugo_pro.transport import UgoTelemetryClient
@@ -35,7 +39,9 @@ def test_ugo_bilcon_get_action_returns_telemetry(tmp_path) -> None:
     teleop = UgoBilcon(
         config,
         telemetry_parser=parser,
-        telemetry_client_factory=lambda: cast(UgoTelemetryClient, DummyTelemetryClient()),
+        telemetry_client_factory=lambda: cast(
+            UgoTelemetryClient, DummyTelemetryClient()
+        ),
     )
 
     teleop.connect()

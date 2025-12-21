@@ -5,7 +5,11 @@ import time
 from typing import Callable, cast
 
 from lerobot_robot_ugo_pro import UgoPro, UgoProConfig
-from lerobot_robot_ugo_pro.telemetry import JointStateBuffer, TelemetryFrame, TelemetryParser
+from lerobot_robot_ugo_pro.telemetry import (
+    JointStateBuffer,
+    TelemetryFrame,
+    TelemetryParser,
+)
 from lerobot_robot_ugo_pro.transport import UgoCommandClient, UgoTelemetryClient
 
 
@@ -38,7 +42,10 @@ class DummyCommandClient:
     def send_empty_packet(self) -> None:
         self.sent.append({})
 
-def _make_robot(config: UgoProConfig) -> tuple[UgoPro, JointStateBuffer, DummyCommandClient]:
+
+def _make_robot(
+    config: UgoProConfig,
+) -> tuple[UgoPro, JointStateBuffer, DummyCommandClient]:
     buffer = JointStateBuffer()
     parser = TelemetryParser(buffer=buffer)
     parser.latest_ids = config.all_joint_ids

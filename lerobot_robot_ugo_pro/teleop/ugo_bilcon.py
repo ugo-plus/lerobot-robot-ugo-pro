@@ -37,8 +37,12 @@ class UgoBilcon(Teleoperator):
         self.config = config
         self._is_connected = False
         self._default_action = self._make_default_action()
-        self._joint_buffer = telemetry_parser.buffer if telemetry_parser else JointStateBuffer()
-        self._telemetry_parser = telemetry_parser or TelemetryParser(buffer=self._joint_buffer)
+        self._joint_buffer = (
+            telemetry_parser.buffer if telemetry_parser else JointStateBuffer()
+        )
+        self._telemetry_parser = telemetry_parser or TelemetryParser(
+            buffer=self._joint_buffer
+        )
         self._telemetry_client_factory = telemetry_client_factory
         self._telemetry_client: UgoTelemetryClient | None = None
 
@@ -112,7 +116,9 @@ class UgoBilcon(Teleoperator):
             action = self._frame_to_action(frame)
 
         # action["mode"] = self.config.mode
-        action["teleop.meta.timestamp"] = (frame.timestamp * 1_000) if frame else time.time() * 1_000
+        action["teleop.meta.timestamp"] = (
+            (frame.timestamp * 1_000) if frame else time.time() * 1_000
+        )
         return action
 
     def send_feedback(self, feedback: dict[str, Any]) -> None:  # noqa: ARG002
@@ -132,7 +138,8 @@ class UgoBilcon(Teleoperator):
     def _frame_to_action(self, frame: TelemetryFrame) -> dict[str, Any]:
         action: dict[str, Any] = {}
         for joint_id in self.config.joint_ids:
-            action[f"joint_{joint_id}.target_deg"] = float(frame.angles_deg.get(joint_id, 0.0))
+            value = float(frame.angles_deg.get(joint_id, 0.0))
+            action[f"joint_{joint_id}.target_deg"] = round(value, 1)
             # action[f"joint_{joint_id}.velocity_raw"] = float(frame.velocities_raw.get(joint_id, 0.0))
             # action[f"joint_{joint_id}.torque_raw"] = float(frame.currents_raw.get(joint_id, 0.0))
         return action

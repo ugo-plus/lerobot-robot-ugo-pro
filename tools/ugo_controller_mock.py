@@ -7,6 +7,7 @@ import sys
 import time
 from typing import List
 
+
 def parse_id_ranges(expr: str) -> List[int]:
     ids = []
     for part in expr.split(","):
@@ -18,10 +19,12 @@ def parse_id_ranges(expr: str) -> List[int]:
             ids.append(int(part))
     return ids
 
+
 def fmt_row(label: str, values: List[int]) -> str:
     cells = [f" {label}"]
     cells.extend(f"{v:4d}" if isinstance(v, int) else f"{v}" for v in values)
     return cells[0] + ", " + ", ".join(cells[1:])
+
 
 def fmt_row_allow_blank(label: str, values: List[str]) -> str:
     cells = [f" {label}"]
@@ -37,20 +40,23 @@ def fmt_row_allow_blank(label: str, values: List[str]) -> str:
                 fmt_vals.append(v)
     return cells[0] + ", " + ", ".join(fmt_vals)
 
+
 def build_vsd_line(ver: int, mode_str: str) -> str:
-    interval = random.choice([44,45,46,47,48])
-    read = random.choice([31,32])
-    write = random.choice([12,13])
+    interval = random.choice([44, 45, 46, 47, 48])
+    read = random.choice([31, 32])
+    write = random.choice([12, 13])
     return f"vsd, , ver:{ver}, interval:{interval}[ms], read:{read}[ms], write:{write}[ms], mode:{mode_str}"
+
 
 def gen_agl_values(ids: List[int], t: float) -> List[int]:
     out = []
     for i, _ in enumerate(ids):
-        amp_deg = 30.0 + 5.0*math.sin(0.11*i)
-        freq = 0.25 + 0.02*(i % 5)
-        val_deg = amp_deg * math.sin(2*math.pi*freq*t + i*0.3)
+        amp_deg = 30.0 + 5.0 * math.sin(0.11 * i)
+        freq = 0.25 + 0.02 * (i % 5)
+        val_deg = amp_deg * math.sin(2 * math.pi * freq * t + i * 0.3)
         out.append(int(round(val_deg * 10)))
     return out
+
 
 def gen_vel_values(ids: List[int], tick: int) -> List[int]:
     out = []
@@ -61,8 +67,10 @@ def gen_vel_values(ids: List[int], tick: int) -> List[int]:
             out.append(0)
     return out
 
+
 def gen_cur_values(ids: List[int]) -> List[int]:
     return [random.randint(-12, 12) for _ in ids]
+
 
 def gen_obj_values(ids: List[int], style: str, flip: bool) -> List[int]:
     if style == "zero":
@@ -72,6 +80,7 @@ def gen_obj_values(ids: List[int], style: str, flip: bool) -> List[int]:
     else:
         return [0 if flip else 0 for _ in ids]
 
+
 def maybe_drop_fields(values: List[int], drop_rate: float = 0.0) -> List[str]:
     out = []
     for v in values:
@@ -80,6 +89,7 @@ def maybe_drop_fields(values: List[int], drop_rate: float = 0.0) -> List[str]:
         else:
             out.append(str(v))
     return out
+
 
 def build_frame(ids, ver, mode_str, t, tick, obj_style, allow_blank_prob) -> str:
     vsd = build_vsd_line(ver, mode_str)
@@ -95,6 +105,7 @@ def build_frame(ids, ver, mode_str, t, tick, obj_style, allow_blank_prob) -> str
     cur_s = fmt_row("cur", cur_vals)
     obj_s = fmt_row("obj", obj_vals)
     return "\n".join([vsd, row_id, agl_s, vel_s, cur_s, obj_s])
+
 
 def wait_for_trigger(host: str, port: int, timeout: float = None) -> tuple:
     """
@@ -122,8 +133,11 @@ def wait_for_trigger(host: str, port: int, timeout: float = None) -> tuple:
     finally:
         sock.close()
 
+
 def main():
-    ap = argparse.ArgumentParser(description="Dummy UDP VSD telemetry sender (MCU→PC emulator) with trigger")
+    ap = argparse.ArgumentParser(
+        description="Dummy UDP VSD telemetry sender (MCU→PC emulator) with trigger"
+    )
     ap.add_argument("--host", default="127.0.0.1", help="telemetry destination host")
     ap.add_argument("--port", type=int, default=8886, help="telemetry destination port")
     ap.add_argument("--pps", type=int, default=10, help="packets per second")
@@ -134,11 +148,22 @@ def main():
     )
     ap.add_argument("--ver", type=int, default=251008)
     ap.add_argument("--mode", choices=["bilateral", "normal"], default="bilateral")
-    ap.add_argument("--include-obj", choices=["zero", "sentinel", "auto"], default="sentinel")
-    ap.add_argument("--blank-rate", type=float, default=0.0, help="agl 欠落フィールド発生確率（0.0-1.0）")
+    ap.add_argument(
+        "--include-obj", choices=["zero", "sentinel", "auto"], default="sentinel"
+    )
+    ap.add_argument(
+        "--blank-rate",
+        type=float,
+        default=0.0,
+        help="agl 欠落フィールド発生確率（0.0-1.0）",
+    )
     ap.add_argument("--trigger-host", default="0.0.0.0", help="trigger listen host")
-    ap.add_argument("--trigger-port", type=int, default=8888, help="trigger listen port")
-    ap.add_argument("--trigger-timeout", type=float, default=None, help="seconds; None for infinite")
+    ap.add_argument(
+        "--trigger-port", type=int, default=8888, help="trigger listen port"
+    )
+    ap.add_argument(
+        "--trigger-timeout", type=float, default=None, help="seconds; None for infinite"
+    )
     args = ap.parse_args()
 
     ids = parse_id_ranges(args.ids)
@@ -147,13 +172,19 @@ def main():
         sys.exit(1)
 
     # --- 1) トリガ待ち ---
-    _data, (trig_ip, trig_port) = wait_for_trigger(args.trigger_host, args.trigger_port, args.trigger_timeout)
+    _data, (trig_ip, trig_port) = wait_for_trigger(
+        args.trigger_host, args.trigger_port, args.trigger_timeout
+    )
 
     # --- 2) テレメトリ送信開始 ---
     dst = (args.host, args.port)
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    print(f"[INFO] start sending telemetry to udp://{dst[0]}:{dst[1]}  pps={args.pps}  ids={ids}")
-    print(f"[INFO] mode= {args.mode}  ver={args.ver}  trigger_from={trig_ip}:{trig_port}")
+    print(
+        f"[INFO] start sending telemetry to udp://{dst[0]}:{dst[1]}  pps={args.pps}  ids={ids}"
+    )
+    print(
+        f"[INFO] mode= {args.mode}  ver={args.ver}  trigger_from={trig_ip}:{trig_port}"
+    )
 
     mode_str = "bilateral(1)" if args.mode == "bilateral" else "nomal(0)"
     period = 1.0 / max(1, args.pps)
@@ -190,6 +221,7 @@ def main():
         print("\n[INFO] stopped by user (Ctrl+C).")
     finally:
         sock.close()
+
 
 if __name__ == "__main__":
     main()

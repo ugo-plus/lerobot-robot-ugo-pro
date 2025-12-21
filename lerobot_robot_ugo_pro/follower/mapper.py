@@ -43,13 +43,20 @@ class UgoFollowerMapper:
         requested = self._extract_targets(action)
         requested.update(self._extract_action_map_targets(action))
         requested = self._apply_mirror(requested)
-        targets = self._complete_targets(requested, current_angles or {}, previous_targets or {})
+        targets = self._complete_targets(
+            requested, current_angles or {}, previous_targets or {}
+        )
         targets = self._apply_follower_gain(targets, current_angles or {})
 
         velocity_raw = self._extract_numeric_series(action, ".velocity_raw")
         torque_raw = self._extract_numeric_series(action, ".torque_raw")
 
-        return MappedAction(targets_deg=targets, velocity_raw=velocity_raw, torque_raw=torque_raw, mode=mode)
+        return MappedAction(
+            targets_deg=targets,
+            velocity_raw=velocity_raw,
+            torque_raw=torque_raw,
+            mode=mode,
+        )
 
     # ------------------------------------------------------------------ #
     # Extraction helpers
@@ -59,7 +66,11 @@ class UgoFollowerMapper:
         prefix = "joint_"
         suffix = ".target_deg"
         for key, value in action.items():
-            if not isinstance(key, str) or not key.startswith(prefix) or not key.endswith(suffix):
+            if (
+                not isinstance(key, str)
+                or not key.startswith(prefix)
+                or not key.endswith(suffix)
+            ):
                 continue
             joint_str = key[len(prefix) : -len(suffix)]
             try:
@@ -72,7 +83,9 @@ class UgoFollowerMapper:
                 continue
         return result
 
-    def _extract_action_map_targets(self, action: Mapping[str, Any]) -> dict[int, float]:
+    def _extract_action_map_targets(
+        self, action: Mapping[str, Any]
+    ) -> dict[int, float]:
         mapped: dict[int, float] = {}
         for key, joint_id in self.config.action_map.items():
             if key not in action:
@@ -83,7 +96,9 @@ class UgoFollowerMapper:
                 continue
         return mapped
 
-    def _extract_numeric_series(self, action: Mapping[str, Any], suffix: str) -> dict[int, float]:
+    def _extract_numeric_series(
+        self, action: Mapping[str, Any], suffix: str
+    ) -> dict[int, float]:
         result: dict[int, float] = {}
         for joint_id in self.config.all_joint_ids:
             key = f"joint_{joint_id}{suffix}"
@@ -103,7 +118,9 @@ class UgoFollowerMapper:
             return targets
 
         mirrored = targets.copy()
-        for left_id, right_id in zip(self.config.left_arm_ids, self.config.right_arm_ids):
+        for left_id, right_id in zip(
+            self.config.left_arm_ids, self.config.right_arm_ids
+        ):
             left_val = targets.get(left_id)
             right_val = targets.get(right_id)
             if right_val is not None:
@@ -130,7 +147,9 @@ class UgoFollowerMapper:
                 completed[joint_id] = 0.0
         return completed
 
-    def _apply_follower_gain(self, targets: dict[int, float], current: Mapping[int, float]) -> dict[int, float]:
+    def _apply_follower_gain(
+        self, targets: dict[int, float], current: Mapping[int, float]
+    ) -> dict[int, float]:
         gain = self.config.follower_gain
         if gain >= 1.0 or not current:
             return targets

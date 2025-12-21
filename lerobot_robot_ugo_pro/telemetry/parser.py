@@ -82,7 +82,6 @@ class TelemetryParser:
         self._raw_lines.append(line)
         return None
 
-
     def _finalize_frame(self) -> TelemetryFrame | None:
         if not self._current_lines:
             return None
@@ -168,7 +167,9 @@ class TelemetryParser:
         return series
 
     @staticmethod
-    def _parse_vsd(values: Sequence[str]) -> tuple[float | None, float | None, float | None]:
+    def _parse_vsd(
+        values: Sequence[str],
+    ) -> tuple[float | None, float | None, float | None]:
         interval = read = write = None
         for value in values:
             name, _, remainder = value.partition(":")

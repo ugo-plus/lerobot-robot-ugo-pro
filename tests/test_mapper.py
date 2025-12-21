@@ -19,7 +19,9 @@ def test_mapper_applies_mirror_mode() -> None:
     config = UgoProConfig(mirror_mode=True)
     mapper = UgoFollowerMapper(config)
     action = {"joint_21.target_deg": 15.0}
-    result = mapper.map(action, current_angles={}, previous_targets=config.default_targets_deg())
+    result = mapper.map(
+        action, current_angles={}, previous_targets=config.default_targets_deg()
+    )
     assert result.targets_deg[11] == -15.0  # mirrored and sign flipped
     assert result.targets_deg[21] == 15.0
 

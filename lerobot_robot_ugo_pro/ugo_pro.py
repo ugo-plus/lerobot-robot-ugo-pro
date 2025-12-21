@@ -26,6 +26,7 @@ handler.setLevel(logging.INFO)
 handler.setFormatter(Formatter(BASIC_FORMAT))
 logger.addHandler(handler)
 
+
 class UgoPro(Robot):
     """Follower that talks to the ugo Controller MCU via UDP."""
 
@@ -48,15 +49,21 @@ class UgoPro(Robot):
             len(config.all_joint_ids),
             len(config.cameras),
         )
-        self._joint_buffer = telemetry_parser.buffer if telemetry_parser else JointStateBuffer()
-        self._telemetry_parser = telemetry_parser or TelemetryParser(buffer=self._joint_buffer)
+        self._joint_buffer = (
+            telemetry_parser.buffer if telemetry_parser else JointStateBuffer()
+        )
+        self._telemetry_parser = telemetry_parser or TelemetryParser(
+            buffer=self._joint_buffer
+        )
         self._telemetry_client_factory = telemetry_client_factory
         self._command_client_factory = command_client_factory
         self._telemetry_client: UgoTelemetryClient | None = None
         self._command_client: UgoCommandClient | None = None
         self._mapper = UgoFollowerMapper(config)
         self._last_sent_targets = config.default_targets_deg()
-        self._cmd_history: deque[dict[str, Any]] = deque(maxlen=config.command_history_size)
+        self._cmd_history: deque[dict[str, Any]] = deque(
+            maxlen=config.command_history_size
+        )
         self._last_observation: dict[str, Any] | None = None
         self._is_connected = False
         self.cameras = make_cameras_from_configs(config.cameras)
@@ -66,9 +73,9 @@ class UgoPro(Robot):
     def observation_features(self) -> dict[str, Any]:
         features: dict[str, Any] = {}
         # observation.state should mirror the action ordering: right arm IDs then left,
-        # and contain only joint target angles [deg].
+        # and contain only joint position angles [deg].
         for joint_id in self.config.all_joint_ids:
-            features[f"joint_{joint_id}.target_deg"] = float
+            features[f"joint_{joint_id}.pos_deg"] = float
         for name, cam_cfg in self.config.cameras.items():
             features[f"camera_{name}"] = (cam_cfg.height, cam_cfg.width, 3)
         return features
@@ -219,13 +226,25 @@ class UgoPro(Robot):
     def _frame_to_observation(self, frame: TelemetryFrame) -> dict[str, Any]:
         obs: dict[str, Any] = {}
         for joint_id in self.config.all_joint_ids:
-            obs[f"joint_{joint_id}.pos_deg"] = frame.angles_deg.get(joint_id, math.nan)
+            pos_deg = frame.angles_deg.get(joint_id, math.nan)
+            obs[f"joint_{joint_id}.pos_deg"] = (
+                round(float(pos_deg), 1) if not math.isnan(pos_deg) else math.nan
+            )
             if self.config.expose_velocity:
-                obs[f"joint_{joint_id}.vel_raw"] = frame.velocities_raw.get(joint_id, math.nan)
+                obs[f"joint_{joint_id}.vel_raw"] = frame.velocities_raw.get(
+                    joint_id, math.nan
+                )
             if self.config.expose_current:
-                obs[f"joint_{joint_id}.cur_raw"] = frame.currents_raw.get(joint_id, math.nan)
+                obs[f"joint_{joint_id}.cur_raw"] = frame.currents_raw.get(
+                    joint_id, math.nan
+                )
             if self.config.expose_commanded:
-                obs[f"joint_{joint_id}.target_deg"] = frame.commanded_deg.get(joint_id, math.nan)
+                target_deg = frame.commanded_deg.get(joint_id, math.nan)
+                obs[f"joint_{joint_id}.target_deg"] = (
+                    round(float(target_deg), 1)
+                    if not math.isnan(target_deg)
+                    else math.nan
+                )
 
         obs["packet_age_ms"] = frame.packet_age_ms
         obs["vsd_interval_ms"] = frame.vsd_interval_ms or math.nan
@@ -263,7 +282,10 @@ class UgoPro(Robot):
         ids = self._telemetry_parser.latest_ids
         if ids:
             return
-        logger.debug("Waiting for telemetry id ordering (timeout %.1fs).", self.config.timeout_sec)
+        logger.debug(
+            "Waiting for telemetry id ordering (timeout %.1fs).",
+            self.config.timeout_sec,
+        )
         deadline = now_ms() + self.config.timeout_sec * 1000.0
         while now_ms() < deadline:
             ids = self._telemetry_parser.latest_ids
@@ -273,14 +295,18 @@ class UgoPro(Robot):
                 logger.debug("Telemetry id ordering received: %s", ids)
                 return
 
-        logger.warning("Timed out waiting for telemetry id ordering; falling back to config order.")
+        logger.warning(
+            "Timed out waiting for telemetry id ordering; falling back to config order."
+        )
         if self._command_client:
             self._command_client.update_ids(self.config.all_joint_ids)
 
     def _handle_timeout(self, timeout_sec: float) -> None:
         if not self._command_client:
             return
-        logger.debug("Telemetry timeout detected (%.2fs). Sending hold command.", timeout_sec)
+        logger.debug(
+            "Telemetry timeout detected (%.2fs). Sending hold command.", timeout_sec
+        )
         try:
             self._command_client.send_joint_targets(
                 self._last_sent_targets,
@@ -290,7 +316,9 @@ class UgoPro(Robot):
                 timestamp_ms=None,
             )
         except Exception:
-            logger.debug("Failed to send hold command during telemetry timeout.", exc_info=True)
+            logger.debug(
+                "Failed to send hold command during telemetry timeout.", exc_info=True
+            )
 
     def _record_command(self, payload: str, mode: str) -> None:
         self._cmd_history.append({"ts_ms": now_ms(), "mode": mode, "payload": payload})
