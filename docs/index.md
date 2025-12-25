@@ -16,6 +16,10 @@
 
 パッケージ管理ソフトウェア `Conda` をインストールし、専用の Python 環境を作成します。Python 3.10+ を推奨します。
 
+[Download the conda-forge Installer](https://conda-forge.org/download/)
+
+インストーラの手順に従ってCondaをインストールし、ターミナルにて `conda create` で新たな環境を構築します。
+
 ```bash
 conda create -n lerobot python=3.10
 ```
@@ -29,6 +33,10 @@ conda activate lerobot
 ## 2. LeRobot のインストール
 
 公式ドキュメントに従って LeRobot をインストールします。GPU を使う場合は CUDA 対応もここで済ませます。
+
+```bash
+pip install lerobot
+```
 
 [LeRobot Installation Document](https://huggingface.co/docs/lerobot/installation)
 
