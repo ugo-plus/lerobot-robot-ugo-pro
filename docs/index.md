@@ -49,15 +49,53 @@ pip install lerobot-robot-ugo-pro
 
 ## 4. カメラの設定確認
 
-ugo Pro R&Dモデルに搭載されている３つのカメラ（頭部／右手／左手）の情報を確認します。LeRobotのコマンドを利用して、接続済みのカメラ一覧を確認し、デバイス番号や解像度を把握します。
+ugo Pro R&Dモデルに搭載されている３つのカメラ（頭部／右手／左手）の情報を確認します。LeRobotのコマンドを利用して、接続済みのカメラ一覧を確認し、デバイスID/解像度/FPSを把握します。
 
 ```bash
 lerobot-find-cameras
+
+--- Detected Cameras ---
+Camera #0:
+  Name: OpenCV Camera @ 0
+  Id: 0
+  Default stream profile:
+    Width: 1920
+    Height: 1080
+    Fps: 15.000015
+--------------------
+Camera #1:
+  Name: OpenCV Camera @ 1
+  Id: 1
+  Default stream profile:
+    Width: 1920
+    Height: 1080
+    Fps: 15.000015
+--------------------
+Camera #2:
+  Name: OpenCV Camera @ 2
+  Id: 2
+  Default stream profile:
+    Width: 1920
+    Height: 1080
+    Fps: 15.000015
+...
+
+```
+
+各カメラのIDを `front/right/left` それぞれの `index_or_path` 設定に反映して、今後のlerobotコマンドのパラメータ `--robot.cameras="{...}"` に付与してください。
+
+```json
+{
+  front: {type: opencv, index_or_path: 0, width: 1920, height: 1080, fps: 15}, 
+  right: {type: opencv, index_or_path: 1, width: 1920, height: 1080, fps: 15}, 
+  left: {type: opencv, index_or_path: 2, width: 1920, height: 1080, fps: 15}
+}
 ```
 
 ## 5. データ取得 PC と ugo Controller MCU との LAN 接続の確認
 
-MCU と同じサブネットで通信できることを確認します。必要に応じて `--robot.telemetry_host` / `--robot.command_port` 等を設定します。
+MCU と同じサブネットで通信できることを確認します。
+必要に応じて `--robot.telemetry_host` / `--robot.command_port` 等を設定します。
 
 ## 6. データ取得の確認
 
@@ -67,7 +105,7 @@ Teleop でストリームを確認します。カメラ設定は環境に合わ�
 lerobot-teleoperate \
   --robot.type=ugo_pro \
   --robot.id=my_ugo_pro \
-  --robot.cameras="{ front: {type: opencv, index_or_path: 0, width: 1280, height: 720, fps: 15} }" \
+  --robot.cameras="{ front: {type: opencv, index_or_path: 0, width: 1920, height: 1080, fps: 15}, right: {type: opencv, index_or_path: 1, width: 1920, height: 1080, fps: 15}, left: {type: opencv, index_or_path: 2, width: 1920, height: 1080, fps: 15}}" \
   --teleop.type=ugo_bilcon \
   --teleop.id=my_ugo_bilcon \
   --display_data=true
@@ -81,12 +119,24 @@ lerobot-teleoperate \
 lerobot-record \
   --robot.type=ugo_pro \
   --robot.id=my_ugo_pro \
-  --robot.cameras="{ front: {type: opencv, index_or_path: 0, width: 1280, height: 720, fps: 15} }" \
+  --robot.cameras="{ front: {type: opencv, index_or_path: 0, width: 1920, height: 1080, fps: 15}, right: {type: opencv, index_or_path: 1, width: 1920, height: 1080, fps: 15}, left: {type: opencv, index_or_path: 2, width: 1920, height: 1080, fps: 15}}" \
   --teleop.type=ugo_bilcon \
   --teleop.id=my_ugo_bilcon \
-  --dataset.repo_id=your-name/ugo_pro_demo \
   --dataset.num_episodes=10 \
+  --dataset.fps=15 \
+  --dataset.repo_id=your-name/ugo_pro_demo \
   --dataset.single_task="Pick and place"
+```
+
+一度、レコーディングした後に、同じ `dataset.repo_id` で再度レコーディングをしようとすると、以下のようなエラーが発生します。
+
+```Error
+FileExistsError: [Errno 17] File exists: '~/.cache/huggingface/lerobot/your-name/ugo_pro_demo'
+```
+
+その場合は、同ディレクトリを削除してください。
+```
+rm -fr ~/.cache/huggingface/lerobot/your-name/ugo_pro_demo
 ```
 
 ## 8. データセットの確認
