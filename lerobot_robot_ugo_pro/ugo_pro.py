@@ -225,7 +225,12 @@ class UgoPro(Robot):
     # ------------------------------------------------------------------ #
     def _frame_to_observation(self, frame: TelemetryFrame) -> dict[str, Any]:
         obs: dict[str, Any] = {}
+
+        # Get leader frame for action targets (MCU v1.1 only)
+        leader_frame = self._joint_buffer.latest_leader()
+
         for joint_id in self.config.all_joint_ids:
+            # observation.state: Use follower data (actual robot position)
             pos_deg = frame.angles_deg.get(joint_id, math.nan)
             obs[f"joint_{joint_id}.pos_deg"] = (
                 round(float(pos_deg), 1) if not math.isnan(pos_deg) else math.nan
@@ -239,7 +244,14 @@ class UgoPro(Robot):
                     joint_id, math.nan
                 )
             if self.config.expose_commanded:
-                target_deg = frame.commanded_deg.get(joint_id, math.nan)
+                # action.target: Use leader data if available (MCU v1.1),
+                # otherwise fall back to follower commanded_deg (MCU v1.0)
+                if leader_frame is not None:
+                    # MCU v1.1: Leader angles represent the operator's input
+                    target_deg = leader_frame.angles_deg.get(joint_id, math.nan)
+                else:
+                    # MCU v1.0: Use follower commanded_deg as fallback
+                    target_deg = frame.commanded_deg.get(joint_id, math.nan)
                 obs[f"joint_{joint_id}.target_deg"] = (
                     round(float(target_deg), 1)
                     if not math.isnan(target_deg)

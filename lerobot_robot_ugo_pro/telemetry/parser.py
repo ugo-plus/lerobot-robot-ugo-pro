@@ -11,23 +11,49 @@ from .frame import TelemetryFrame
 
 
 class JointStateBuffer:
-    """Thread-safe holder for the latest telemetry frame."""
+    """Thread-safe holder for the latest telemetry frames.
+
+    Supports both MCU v1.0 (follower only) and v1.1 (leader + follower).
+    - Follower frame: Actual robot arm state (from `vsd` or `vsd_f`)
+    - Leader frame: Operator input state (from `vsd_l`, MCU v1.1 only)
+    """
 
     def __init__(self) -> None:
         self._lock = threading.Lock()
         self._frame: TelemetryFrame | None = None
+        self._leader_frame: TelemetryFrame | None = None
 
     def update(self, frame: TelemetryFrame) -> None:
+        """Update the appropriate buffer based on frame source."""
         with self._lock:
-            self._frame = frame
+            if frame.source == "leader":
+                self._leader_frame = frame
+            else:
+                self._frame = frame
 
     def latest(self) -> TelemetryFrame | None:
+        """Return the latest follower frame."""
         with self._lock:
             return self._frame
 
+    def latest_leader(self) -> TelemetryFrame | None:
+        """Return the latest leader frame (MCU v1.1 only)."""
+        with self._lock:
+            return self._leader_frame
+
+    def has_leader_data(self) -> bool:
+        """Check if leader data is available (MCU v1.1)."""
+        with self._lock:
+            return self._leader_frame is not None
+
 
 class TelemetryParser:
-    """Parse bytes coming from the UDP socket into :class:`TelemetryFrame` instances."""
+    """Parse bytes coming from the UDP socket into :class:`TelemetryFrame` instances.
+
+    Supports both MCU v1.0 and v1.1 packet formats:
+    - v1.0: `vsd` prefix (follower data only)
+    - v1.1: `vsd_l` prefix (leader data), `vsd_f` prefix (follower data)
+    """
 
     def __init__(self, *, buffer: JointStateBuffer | None = None):
         self.buffer = buffer or JointStateBuffer()
@@ -35,6 +61,7 @@ class TelemetryParser:
         self.latest_ids: tuple[int, ...] = ()
         self._current_lines: dict[str, list[str]] = {}
         self._raw_lines: list[str] = []
+        self._current_source: str = "follower"
 
     def feed(self, payload: bytes) -> list[TelemetryFrame]:
         """Feed new bytes and return zero or more completed frames."""
@@ -68,10 +95,25 @@ class TelemetryParser:
         parts = [part.strip() for part in line.split(",")]
         key = parts[0]
 
+        # Handle MCU v1.1 packet headers (vsd_l for leader, vsd_f for follower)
+        if key == "vsd_l":
+            frame = self._finalize_frame()
+            self._current_lines = {"vsd": parts[1:]}
+            self._raw_lines = [line]
+            self._current_source = "leader"
+            return frame
+        if key == "vsd_f":
+            frame = self._finalize_frame()
+            self._current_lines = {"vsd": parts[1:]}
+            self._raw_lines = [line]
+            self._current_source = "follower"
+            return frame
+        # Handle MCU v1.0 packet header (vsd for follower only)
         if key == "vsd":
             frame = self._finalize_frame()
             self._current_lines = {"vsd": parts[1:]}
             self._raw_lines = [line]
+            self._current_source = "follower"
             return frame
 
         if not self._current_lines:
@@ -120,6 +162,7 @@ class TelemetryParser:
         elif missing_fields and health == "ok":
             health = "partial"
 
+        source = self._current_source
         frame = TelemetryFrame(
             timestamp=time.time(),
             joint_ids=ids,
@@ -133,6 +176,7 @@ class TelemetryParser:
             missing_fields=tuple(missing_fields),
             raw_lines=raw_lines,
             health=health,
+            source=source,
         )
         self.buffer.update(frame)
         return frame
