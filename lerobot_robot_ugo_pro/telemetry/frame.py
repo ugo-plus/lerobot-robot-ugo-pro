@@ -9,7 +9,12 @@ from typing import Mapping
 
 @dataclass(slots=True)
 class TelemetryFrame:
-    """Container for the parsed telemetry information coming from the MCU."""
+    """Container for the parsed telemetry information coming from the MCU.
+
+    The `source` field indicates the origin of the frame:
+    - "follower": Data from the follower arm (MCU v1.0 `vsd` or v1.1 `vsd_f`)
+    - "leader": Data from the leader arm (MCU v1.1 `vsd_l`)
+    """
 
     timestamp: float
     joint_ids: tuple[int, ...]
@@ -23,6 +28,7 @@ class TelemetryFrame:
     missing_fields: tuple[str, ...] = field(default_factory=tuple)
     raw_lines: tuple[str, ...] = field(default_factory=tuple)
     health: str = "unknown"
+    source: str = "follower"
 
     @property
     def packet_age_ms(self) -> float:
