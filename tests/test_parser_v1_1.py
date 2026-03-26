@@ -8,6 +8,7 @@ from __future__ import annotations
 import sys
 import types
 from pathlib import Path
+from typing import Any
 
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -15,47 +16,47 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 def setup_mock_lerobot() -> None:
     """Set up mock lerobot modules to allow imports without full dependency."""
-    lerobot = types.ModuleType("lerobot")
-    lerobot_cameras = types.ModuleType("lerobot.cameras")
-    lerobot_cameras_configs = types.ModuleType("lerobot.cameras.configs")
-    lerobot_cameras_utils = types.ModuleType("lerobot.cameras.utils")
-    lerobot_utils = types.ModuleType("lerobot.utils")
-    lerobot_utils_errors = types.ModuleType("lerobot.utils.errors")
-    lerobot_robots = types.ModuleType("lerobot.robots")
-    lerobot_robots_config = types.ModuleType("lerobot.robots.config")
-    lerobot_robots_robot = types.ModuleType("lerobot.robots.robot")
-    lerobot_teleoperators = types.ModuleType("lerobot.teleoperators")
-    lerobot_teleoperators_config = types.ModuleType("lerobot.teleoperators.config")
-    lerobot_teleoperators_teleoperator = types.ModuleType(
+    lerobot: Any = types.ModuleType("lerobot")
+    lerobot_cameras: Any = types.ModuleType("lerobot.cameras")
+    lerobot_cameras_configs: Any = types.ModuleType("lerobot.cameras.configs")
+    lerobot_cameras_utils: Any = types.ModuleType("lerobot.cameras.utils")
+    lerobot_utils: Any = types.ModuleType("lerobot.utils")
+    lerobot_utils_errors: Any = types.ModuleType("lerobot.utils.errors")
+    lerobot_robots: Any = types.ModuleType("lerobot.robots")
+    lerobot_robots_config: Any = types.ModuleType("lerobot.robots.config")
+    lerobot_robots_robot: Any = types.ModuleType("lerobot.robots.robot")
+    lerobot_teleoperators: Any = types.ModuleType("lerobot.teleoperators")
+    lerobot_teleoperators_config: Any = types.ModuleType("lerobot.teleoperators.config")
+    lerobot_teleoperators_teleoperator: Any = types.ModuleType(
         "lerobot.teleoperators.teleoperator"
     )
-    lerobot_teleoperators_utils = types.ModuleType("lerobot.teleoperators.utils")
+    lerobot_teleoperators_utils: Any = types.ModuleType("lerobot.teleoperators.utils")
 
     class CameraConfig:
         pass
 
     class RobotConfig:
         @classmethod
-        def register_subclass(cls, name):
-            def decorator(subcls):
+        def register_subclass(cls, name: str) -> Any:
+            def decorator(subcls: Any) -> Any:
                 return subcls
 
             return decorator
 
     class Robot:
-        def __init__(self, config):
+        def __init__(self, config: Any) -> None:
             pass
 
     class TeleoperatorConfig:
         @classmethod
-        def register_subclass(cls, name):
-            def decorator(subcls):
+        def register_subclass(cls, name: str) -> Any:
+            def decorator(subcls: Any) -> Any:
                 return subcls
 
             return decorator
 
     class Teleoperator:
-        def __init__(self, config):
+        def __init__(self, config: Any) -> None:
             pass
 
     class DeviceAlreadyConnectedError(Exception):
@@ -67,7 +68,7 @@ def setup_mock_lerobot() -> None:
     class TeleopEvents:
         pass
 
-    def make_cameras_from_configs(configs):
+    def make_cameras_from_configs(configs: Any) -> dict[str, Any]:
         return {}
 
     lerobot_cameras_configs.CameraConfig = CameraConfig
@@ -113,7 +114,7 @@ def setup_mock_lerobot() -> None:
 # Set up mocks before importing the module
 setup_mock_lerobot()
 
-from lerobot_robot_ugo_pro.telemetry import JointStateBuffer, TelemetryParser
+from lerobot_robot_ugo_pro.telemetry import JointStateBuffer, TelemetryParser  # noqa: E402
 
 
 def test_parser_v1_0_backward_compatibility() -> None:
@@ -202,10 +203,13 @@ def test_parser_v1_1_interleaved_packets() -> None:
     parser.flush()
 
     # Both should be available
-    assert buffer.latest() is not None
-    assert buffer.latest().source == "follower"
-    assert buffer.latest_leader() is not None
-    assert buffer.latest_leader().source == "leader"
+    follower_frame = buffer.latest()
+    assert follower_frame is not None
+    assert follower_frame.source == "follower"
+
+    leader_frame = buffer.latest_leader()
+    assert leader_frame is not None
+    assert leader_frame.source == "leader"
 
 
 def test_has_leader_data() -> None:
@@ -214,9 +218,7 @@ def test_has_leader_data() -> None:
     assert not buffer.has_leader_data()
 
     parser = TelemetryParser(buffer=buffer)
-    leader_payload = (
-        "vsd_l,interval:10[ms]\n" "id,11,12\n" "agl,100,200\n"
-    ).encode()
+    leader_payload = ("vsd_l,interval:10[ms]\nid,11,12\nagl,100,200\n").encode()
     parser.feed(leader_payload)
     parser.flush()
 

@@ -127,7 +127,10 @@ def test_parser_v1_1_interleaved_packets() -> None:
     parser.flush()
 
     # Both should be available
-    assert buffer.latest() is not None
-    assert buffer.latest().source == "follower"
-    assert buffer.latest_leader() is not None
-    assert buffer.latest_leader().source == "leader"
+    follower_frame = buffer.latest()
+    assert follower_frame is not None
+    assert follower_frame.source == "follower"
+
+    leader_frame = buffer.latest_leader()
+    assert leader_frame is not None
+    assert leader_frame.source == "leader"

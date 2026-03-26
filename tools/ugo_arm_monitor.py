@@ -320,7 +320,9 @@ def render_v1_1(state: MonitorState):
                 max_error_id = sid
 
     if max_error_id is not None:
-        sys.stdout.write(f"Max tracking error: {max_error:.1f} deg (ID={max_error_id})\n")
+        sys.stdout.write(
+            f"Max tracking error: {max_error:.1f} deg (ID={max_error_id})\n"
+        )
     else:
         sys.stdout.write("Max tracking error: N/A\n")
 
