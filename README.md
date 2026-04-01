@@ -26,6 +26,12 @@ pip install lerobot-robot-ugo-pro
 pip install -e ".[dev]"
 ```
 
+### Check Installed Version
+
+```bash
+python -c "from importlib.metadata import version; print(version('lerobot_robot_ugo_pro'))"
+```
+
 The package exposes the `ugo_pro` robot type via the `lerobot.robots` entry-point, so once installed it is automatically available to the LeRobot CLI tools. When running straight from a git checkout (before packaging), set `PYTHONPATH=$PWD` or `LEROBOT_THIRD_PARTY_MODULES=lerobot_robot_ugo_pro.ugo_pro` so the follower class is importable.
 
 ---
