@@ -6,14 +6,14 @@ build-backend = "setuptools.build_meta"
 name = "lerobot_robot_ugo_pro"
 version = "1.1.0"
 description = "LeRobot follower implementation for the ugo Pro humanoid robot"
-requires-python = ">=3.10"
+requires-python = ">=3.12"
 authors = [
     { name = "ugo" },
 ]
 readme = "README.md"
 license = { text = "Apache-2.0" }
 dependencies = [
-    "lerobot>=0.4",
+    "lerobot",
 ]
 
 [project.optional-dependencies]
@@ -36,6 +36,9 @@ exclude = ["tests*"]
 
 [tool.uv.workspace]
 members = ["lerobot-robot-dev", "lerobot-robot-dev-env"]
+
+[tool.uv.sources]
+lerobot = { git = "https://github.com/UminoKosuke/lerobot.git" }
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
